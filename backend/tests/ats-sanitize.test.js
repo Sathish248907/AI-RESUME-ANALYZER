@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runTextAtsChecks, mergeAtsChecks } from "../src/services/atsService.js";
+import { runTextAtsChecks, mergeAtsChecks } from "../src/services/resume/atsService.js";
 import { detectInjectionAttempts, sanitizeDocumentText } from "../src/utils/sanitize.js";
-import { buildUserPrompt, prepareInputs, SYSTEM_PROMPT } from "../src/services/resumeAnalysisService.js";
+import { buildUserPrompt, prepareInputs, SYSTEM_PROMPT } from "../src/services/resume/resumeAnalysisService.js";
 import { redact } from "../src/utils/logger.js";
 import { RESUME_TEXT, JOB_DESCRIPTION } from "./fixtures.js";
 

@@ -9,9 +9,10 @@ import { globalLimiter } from "./middleware/rateLimit.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { createAuthRoutes } from "./routes/authRoutes.js";
 import { createAnalysisRoutes } from "./routes/analysisRoutes.js";
+import { createResumeRoutes } from "./routes/resumeRoutes.js";
 import { createAuthService } from "./services/authService.js";
-import { createAnalysisRepository } from "./services/analysisRepository.js";
-import { createLlmProvider, providerConfigFromEnv } from "./services/llmProvider.js";
+import { createAnalysisRepository } from "./models/analysisRepository.js";
+import { createLlmProvider, providerConfigFromEnv } from "./services/ai/llmProvider.js";
 import { logger } from "./utils/logger.js";
 
 const REQUEST_TIMEOUT_MS = 120_000;
@@ -79,6 +80,7 @@ export function createApp({ env, prisma, llm, repo, authService }) {
   });
 
   app.use("/api/auth", createAuthRoutes(auth));
+  app.use("/api/resume", createResumeRoutes());
   app.use(
     "/api/analysis",
     createAnalysisRoutes({

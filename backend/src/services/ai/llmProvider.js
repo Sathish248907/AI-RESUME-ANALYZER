@@ -15,8 +15,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { ApiError } from "../utils/errors.js";
-import { logger } from "../utils/logger.js";
+import { ApiError } from "../../utils/errors.js";
+import { logger } from "../../utils/logger.js";
 
 /**
  * @typedef {Object} ProviderConfig

@@ -120,8 +120,10 @@ export function fakePrisma() {
       async findFirst({ where }) {
         return analyses.find((a) => matches(a, where)) ?? null;
       },
-      async findMany({ where, take }) {
-        return analyses.filter((a) => matches(a, where)).sort((x, y) => y.createdAt - x.createdAt).slice(0, take);
+      async findMany({ where, take, select }) {
+        const rows = analyses.filter((a) => matches(a, where)).sort((x, y) => y.createdAt - x.createdAt).slice(0, take);
+        if (!select) return rows;
+        return rows.map((r) => Object.fromEntries(Object.keys(select).filter((k) => select[k]).map((k) => [k, r[k]])));
       },
       async deleteMany({ where }) {
         const before = analyses.length;

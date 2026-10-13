@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calculateMatchScore, DEFAULT_WEIGHTS } from "../src/services/scoringService.js";
+import { calculateMatchScore, DEFAULT_WEIGHTS } from "../src/services/resume/scoringService.js";
 
 const skill = (name, priority, extra = {}) => ({ name, category: "Frontend", priority, evidence: "e", evidenceType: "direct", ...extra });
 const missing = (name, priority) => ({ name, category: "Frontend", priority, reason: "not found" });

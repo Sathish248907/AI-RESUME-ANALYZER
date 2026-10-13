@@ -1,4 +1,4 @@
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 const message = (what) => ({
   error: { code: "RATE_LIMITED", message: `Too many ${what}. Please wait and try again.`, retryable: true },
@@ -30,6 +30,6 @@ export function createAnalysisLimiter(limit) {
     standardHeaders: "draft-7",
     legacyHeaders: false,
     message: message("analysis requests"),
-    keyGenerator: (req) => req.user?.id ?? req.ip,
+    keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip),
   });
 }

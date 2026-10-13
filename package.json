@@ -1,0 +1,27 @@
+{
+  "name": "ai-resume-analyzer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI Resume Analyzer — Next.js frontend and Express/Prisma backend (monorepo root)",
+  "workspaces-note": "frontend/ and backend/ keep their own dependencies; this root only provides convenience scripts.",
+  "scripts": {
+    "dev": "concurrently -n frontend,backend -c cyan,magenta \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "build": "npm --prefix frontend run build",
+    "start:frontend": "npm --prefix frontend run start",
+    "start:backend": "npm --prefix backend run start",
+    "test": "npm --prefix backend test",
+    "typecheck": "npx --prefix frontend tsc --noEmit -p frontend/tsconfig.json",
+    "install:all": "npm install && npm --prefix frontend install && npm --prefix backend install",
+    "db:generate": "npm --prefix backend run db:generate",
+    "db:migrate": "npm --prefix backend run db:migrate",
+    "db:deploy": "npm --prefix backend run db:deploy"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=18.12"
+  }
+}

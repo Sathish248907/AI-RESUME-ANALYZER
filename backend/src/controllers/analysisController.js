@@ -1,9 +1,9 @@
 import { ApiError } from "../utils/errors.js";
-import { analyzeResume } from "../services/resumeAnalysisService.js";
-import { serializeAnalysis } from "../services/analysisRepository.js";
+import { analyzeResume } from "../services/resume/resumeAnalysisService.js";
+import { serializeAnalysis } from "../models/analysisRepository.js";
 
 /**
- * @param {{ repo: ReturnType<import("../services/analysisRepository.js").createAnalysisRepository>,
+ * @param {{ repo: ReturnType<import("../models/analysisRepository.js").createAnalysisRepository>,
  *           getLlm: () => { generateStructured: Function, name: string, model: string },
  *           storeResumeText: boolean }} deps
  */

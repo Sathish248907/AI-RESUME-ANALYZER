@@ -4,12 +4,12 @@
  * (timeout, rate limit, malformed output, unconfigured), persistence,
  * ownership checks, delete and regenerate.
  */
-import { test, before, after } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { loadEnv } from "../src/config/env.js";
 import { createApp } from "../src/app.js";
 import { ApiError } from "../src/utils/errors.js";
-import { createLlmProvider } from "../src/services/llmProvider.js";
+import { createLlmProvider } from "../src/services/ai/llmProvider.js";
 import { JOB_DESCRIPTION, RESUME_TEXT, TEST_ENV, fakeLlm, fakePrisma, validAiOutput } from "./fixtures.js";
 
 let server;
@@ -17,7 +17,24 @@ let baseUrl;
 let llm;
 let prisma;
 
+// Node 18's top-level before() hook is unreliable, so the server starts lazily.
+async function ensureServer() {
+  if (server) return;
+  const env = loadEnv(TEST_ENV);
+  prisma = fakePrisma();
+  llm = fakeLlm();
+  const app = createApp({ env, prisma, llm });
+  await new Promise((resolve) => {
+    server = app.listen(0, () => {
+      baseUrl = `http://127.0.0.1:${server.address().port}`;
+      resolve();
+    });
+    server.unref(); // let the test process exit once the tests finish
+  });
+}
+
 async function api(path, { method = "GET", token, body } = {}) {
+  await ensureServer();
   const res = await fetch(baseUrl + path, {
     method,
     headers: { "Content-Type": "application/json", Origin: "http://localhost:3001", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -29,20 +46,7 @@ async function api(path, { method = "GET", token, body } = {}) {
 
 const validBody = { resumeText: RESUME_TEXT, jobTitle: "Senior Frontend Developer", targetRole: "Frontend Developer", jobDescription: JOB_DESCRIPTION, companyName: "Acme" };
 
-before(async () => {
-  const env = loadEnv(TEST_ENV);
-  prisma = fakePrisma();
-  llm = fakeLlm();
-  const app = createApp({ env, prisma, llm });
-  await new Promise((resolve) => {
-    server = app.listen(0, () => {
-      baseUrl = `http://127.0.0.1:${server.address().port}`;
-      resolve();
-    });
-  });
-});
-
-after(() => new Promise((r) => server.close(r)));
+after(() => new Promise((r) => (server ? server.close(r) : r())));
 
 async function registerUser(email) {
   const r = await api("/api/auth/register", { method: "POST", body: { email, password: "password123", name: "Tester" } });

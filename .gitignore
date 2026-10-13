@@ -1,0 +1,43 @@
+# ── Dependencies ─────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.*
+
+# ── Environment & secrets (keep *.example) ───────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Frontend build output (Next.js) ──────────────────────────────────────────
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/next-env.d.ts
+*.tsbuildinfo
+
+# ── Backend ──────────────────────────────────────────────────────────────────
+backend/dist/
+backend/coverage/
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# ── Logs & OS ────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
+
+# ── Editors ──────────────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# ── Local backup of the former nested frontend repository (history is on GitHub) ──
+.git-frontend-backup/
+
+# ── Misc ─────────────────────────────────────────────────────────────────────
+.vercel
+coverage/

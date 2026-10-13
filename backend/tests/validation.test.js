@@ -64,7 +64,7 @@ test("environment defaults model per provider and flags unconfigured keys", () =
   assert.equal(a.LLM_MODEL, "claude-opus-5-5");
   assert.equal(a.LLM_CONFIGURED, false);
   const g = loadEnv({ ...TEST_ENV, LLM_PROVIDER: "gemini" });
-  assert.equal(g.LLM_MODEL, "gemini-1.5-flash");
+  assert.equal(g.LLM_MODEL, "gemini-flash-latest");
   assert.equal(g.LLM_CONFIGURED, true);
   assert.deepEqual(g.FRONTEND_ORIGINS, ["http://localhost:3001"]);
 });
