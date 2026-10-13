@@ -1,36 +1,138 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ResumeAI — AI-Powered Resume Analyzer
 
-## Getting Started
+Upload a resume (PDF/DOCX) and a job description to get instant AI analysis:
+- Resume–job match score
+- Matched & missing skills
+- ATS compatibility check
+- Keyword analysis
+- Improvement suggestions
+- Likely interview questions
+- Analysis history & progress dashboard
 
-First, run the development server:
+## Tech Stack
 
+| Layer | Tech |
+|---|---|
+| Framework | Next.js 14 (App Router) |
+| Styling | Tailwind CSS v3 |
+| Database | PostgreSQL + Prisma ORM |
+| Auth | Auth.js v5 (GitHub + Google OAuth) |
+| AI | Google Gemini 1.5 Flash |
+| File parsing | pdf-parse (PDF), mammoth (DOCX) |
+| Charts | Recharts |
+
+---
+
+## Prerequisites
+
+- **Node.js ≥ 18.17.0** (Next.js 14 requirement)  
+  → Check: `node --version`  
+  → Download: https://nodejs.org (LTS)
+- **PostgreSQL** running locally or a hosted instance (Supabase, Neon, Railway are free)
+- **Gemini API key** — free at https://aistudio.google.com/app/apikey
+- (Optional) GitHub and/or Google OAuth app for authentication
+
+---
+
+## Setup
+
+### 1. Install dependencies
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Configure environment variables
+Copy `.env` and fill in your values:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```env
+# PostgreSQL connection string
+DATABASE_URL="postgresql://postgres:password@localhost:5432/resume_analyzer"
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Auth.js — generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+NEXTAUTH_SECRET="your-secret"
+NEXTAUTH_URL="http://localhost:3000"
 
-## Learn More
+# OAuth providers (optional — remove providers you don't use)
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+GITHUB_CLIENT_ID=""
+GITHUB_CLIENT_SECRET=""
 
-To learn more about Next.js, take a look at the following resources:
+# Gemini AI
+GEMINI_API_KEY="your-gemini-api-key"
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 3. Set up the database
+```bash
+# Push schema to your database
+npm run db:push
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Or run migrations (recommended for production)
+npm run db:migrate
+```
 
-## Deploy on Vercel
+### 4. Run the development server
+```bash
+npm run dev
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Open [http://localhost:3000](http://localhost:3000).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── page.tsx                  # Landing page
+│   ├── analyze/page.tsx          # Upload + analyze page
+│   ├── dashboard/page.tsx        # Progress dashboard
+│   ├── history/page.tsx          # Analysis history
+│   ├── auth/signin/page.tsx      # Sign-in page
+│   └── api/
+│       ├── parse-resume/route.ts # PDF/DOCX text extraction
+│       ├── analyze/route.ts      # AI analysis endpoint
+│       ├── history/route.ts      # Saved analyses CRUD
+│       └── auth/[...nextauth]/   # Auth.js handler
+├── components/
+│   ├── ui/                       # Button, Card, Badge, ProgressBar
+│   ├── layout/                   # Navbar, Footer
+│   ├── resume/                   # ResumeDropzone
+│   └── dashboard/                # ScoreGauge, SkillsPanel, etc.
+├── lib/
+│   ├── prisma.ts                 # Prisma client singleton
+│   ├── gemini.ts                 # Gemini AI functions
+│   ├── auth.ts                   # Auth.js config
+│   └── utils.ts                  # Helpers
+└── types/index.ts                # Shared TypeScript types
+```
+
+---
+
+## Using without a database
+
+The app works without PostgreSQL — analysis results just won't be saved to history. 
+The `/dashboard` and `/history` pages will show empty states gracefully.
+
+---
+
+## Getting a Gemini API Key
+
+1. Go to https://aistudio.google.com/app/apikey
+2. Sign in with a Google account
+3. Click **Create API Key**
+4. Copy it into your `.env` as `GEMINI_API_KEY`
+
+The free tier includes generous usage limits for personal/portfolio projects.
+
+---
+
+## Production deployment
+
+Recommended: [Vercel](https://vercel.com) + [Neon](https://neon.tech) (serverless Postgres, free tier).
+
+```bash
+npm run build
+npm start
+```
