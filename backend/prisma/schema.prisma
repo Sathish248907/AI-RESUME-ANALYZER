@@ -1,0 +1,50 @@
+// Backend schema for the AI Resume Analyzer API.
+// Table names are mapped with a prefix so this schema can share a database
+// with the Next.js (NextAuth) schema without colliding.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  analyses Analysis[]
+
+  @@map("api_users")
+}
+
+model Analysis {
+  id           String   @id @default(cuid())
+  userId       String
+  jobTitle     String
+  targetRole   String
+  companyName  String?
+  fileName     String?
+  analysisMode String   @default("ai") // "ai" | "demo"
+  matchScore   Int
+  provider     String?
+  model        String?
+  /// Validated, structured analysis result (see validators/analysisSchemas.js)
+  result       Json
+  /// Inputs needed to regenerate the analysis. Resume text is only stored when STORE_RESUME_TEXT=true.
+  jobDescription String  @db.Text
+  resumeText     String? @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("api_analyses")
+}
