@@ -233,3 +233,7 @@ This project is licensed under the [MIT License](LICENSE).
 ## Phase 5 — Persistent dashboard, resume history, job tracking
 
 See [docs/phase5.md](docs/phase5.md) for the schema changes, migration commands, new API endpoints, pages and known limitations.
+
+## Phase 6 — AI mock interviews & answer evaluation
+
+See [docs/phase6.md](docs/phase6.md) for the interview models, versioned scoring rubric, report aggregation method, endpoints and limitations.

@@ -157,19 +157,83 @@ model InterviewSession {
   id                     String    @id @default(cuid())
   userId                 String
   targetRole             String
-  interviewType          String    @default("mixed") // technical | behavioral | project | mixed
+  interviewType          String    @default("mixed") // technical | hr | coding | resume_based | behavioral | mixed | project
+  difficulty             String    @default("intermediate") // beginner | intermediate | advanced
+  durationMinutes        Int?
+  /// totalQuestions (spec name) — number of generated questions
   questionCount          Int
+  /// answeredQuestions (spec name) — answers submitted or skipped
   completedQuestionCount Int       @default(0)
+  /// overallScore (spec name) — mean of evaluated answer scores, null until completed
   score                  Int?
   durationSeconds        Int?
   status                 String    @default("in_progress") // in_progress | completed | abandoned
+  scoringRubricVersion   String?
+  /// Personalisation inputs (ids only; the text is read from the owning rows at generation time)
   analysisId             String?
+  resumeId               String?
+  jobDescriptionId       String?
+  topics                 Json?
+  /// Lightweight log entries created from the analysis Interview tab (Phase 5) have source = "practice_log"
+  source                 String    @default("mock_interview")
+  startedAt              DateTime  @default(now())
   createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
   completedAt            DateTime?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions InterviewQuestion[]
+  answers   InterviewAnswer[]
 
   @@index([userId, createdAt])
   @@index([userId, status])
+  @@index([userId, targetRole])
   @@map("api_interview_sessions")
+}
+
+/// A generated question. `evaluationCriteria` is private to the backend and is never
+/// returned to the client before the answer has been evaluated.
+model InterviewQuestion {
+  id                   String   @id @default(cuid())
+  sessionId            String
+  orderIndex           Int
+  questionText         String   @db.Text
+  category             String
+  topic                String
+  difficulty           String
+  questionType         String   // conceptual | technical | project | scenario | behavioral | coding
+  evaluationCriteria   Json
+  suggestedTimeSeconds Int      @default(180)
+  createdAt            DateTime @default(now())
+
+  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  answer  InterviewAnswer?
+
+  @@unique([sessionId, orderIndex])
+  @@index([sessionId])
+  @@map("api_interview_questions")
+}
+
+/// The candidate's answer and its evaluation. Deleting the session deletes answers (retention policy:
+/// answers live exactly as long as their session; users delete sessions from the interview history).
+model InterviewAnswer {
+  id                  String    @id @default(cuid())
+  sessionId           String
+  questionId          String    @unique
+  answerText          String    @db.Text
+  programmingLanguage String?
+  status              String    @default("draft") // draft | submitted | evaluating | evaluated | insufficient | skipped | failed
+  evaluationResult    Json?
+  score               Int?
+  rubricVersion       String?
+  submittedAt         DateTime?
+  evaluatedAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  session  InterviewSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, status])
+  @@map("api_interview_answers")
 }

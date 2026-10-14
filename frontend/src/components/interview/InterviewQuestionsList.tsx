@@ -198,15 +198,15 @@ export default function InterviewQuestionsList({ questions, mode = "demo", sessi
         {/* CTA */}
         <div className="pt-2 border-t border-gray-100">
           <Link
-            href="/analyze"
+            href="/dashboard/interviews/new"
             className="flex items-center justify-center gap-2 w-full py-3 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 transition-colors"
           >
             <HelpCircle className="w-4 h-4" />
-            Start Interview Practice
+            Start an AI Mock Interview
             <ArrowRight className="w-4 h-4" />
           </Link>
           <p className="text-center text-xs text-gray-400 mt-2">
-            Full mock interview feature coming soon
+            Generates personalised questions and evaluates your answers (sign-in required)
           </p>
         </div>
       </CardContent>

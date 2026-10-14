@@ -128,3 +128,7 @@ Runs with `node --test` and needs no database or network: scoring, validation (r
 ## Phase 5 endpoints
 
 Resumes, saved job descriptions, applications, interview history and dashboard metrics are documented in [../docs/phase5.md](../docs/phase5.md). Run `npx prisma migrate deploy` to apply the new migration.
+
+## Phase 6 endpoints
+
+Mock interview sessions, answer evaluation, reports and recommendations are documented in [../docs/phase6.md](../docs/phase6.md) (`/api/interviews/*`). Run `npx prisma migrate deploy` to apply the new migration.

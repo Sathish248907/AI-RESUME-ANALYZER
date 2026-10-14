@@ -77,16 +77,79 @@ export function validAiOutput() {
 }
 
 /** A fake LLM provider whose behaviour can be swapped per test. */
-export function fakeLlm(behaviour = () => validAiOutput()) {
+export function fakeLlm(behaviour = defaultBehaviour) {
   return {
     name: "fake",
     model: "fake-model",
     calls: 0,
+    lastRequest: null,
     async generateStructured(req) {
       this.calls += 1;
+      this.lastRequest = req;
       const out = await behaviour(req);
-      return { data: out, usage: { inputTokens: 1, outputTokens: 1 }, provider: "fake", model: "fake-model" };
+      // Mirror the real provider: output must satisfy the requested schema.
+      const parsed = req.schema.safeParse(out);
+      if (!parsed.success) {
+        const err = new Error("fake provider output failed schema validation: " + parsed.error.issues.slice(0, 3).map((i) => i.path.join(".") + ": " + i.message).join("; "));
+        err.status = 502;
+        throw err;
+      }
+      return { data: parsed.data, usage: { inputTokens: 1, outputTokens: 1 }, provider: "fake", model: "fake-model" };
     },
+  };
+}
+
+function defaultBehaviour(req) {
+  if (req.schemaName === "interview_questions") return validQuestionBatch(req);
+  if (req.schemaName === "answer_evaluation") return validEvaluation(req);
+  return validAiOutput();
+}
+
+/** Builds N questions matching the count requested in the prompt ("Create exactly N questions"). */
+export function validQuestionBatch(req, count) {
+  const m = /Create exactly (\d+) questions/.exec(req?.user ?? "");
+  const n = count ?? (m ? parseInt(m[1], 10) : 5);
+  const types = ["conceptual", "technical", "project", "scenario", "behavioral", "coding"];
+  const topics = ["React state management", "JavaScript closures", "REST API design", "SQL joins", "Team conflict", "Testing strategy"];
+  return {
+    questions: Array.from({ length: n }, (_, i) => ({
+      questionText: `Question ${i + 1}: explain ${topics[i % topics.length]} and give an example from your experience.`,
+      category: i % 2 ? "Backend" : "Frontend",
+      topic: topics[i % topics.length],
+      difficulty: "intermediate",
+      questionType: types[i % types.length],
+      evaluationCriteria: [
+        { criterion: "Technical accuracy", description: "Core concept explained correctly", weight: 5 },
+        { criterion: "Clarity", description: "Structured, easy to follow", weight: 3 },
+        { criterion: "Example", description: "Includes a concrete example", weight: 2 },
+      ],
+      keyPoints: ["Definition", "Trade-offs", "Example"],
+      suggestedTimeSeconds: 180,
+    })),
+    notes: [],
+  };
+}
+
+export function validEvaluation(req, overrides = {}) {
+  const answer = /<candidate_answer>\n([\s\S]*?)\n<\/candidate_answer>/.exec(req?.user ?? "")?.[1] ?? "";
+  const weak = /weak answer/i.test(answer);
+  const score = weak ? 1 : 4;
+  return {
+    evaluable: true,
+    insufficientReason: null,
+    strengths: weak ? [] : ["Explains the core concept accurately"],
+    improvements: ["Add a practical example"],
+    missingConcepts: weak ? ["Error handling", "Trade-offs"] : ["Error handling"],
+    incorrectStatements: [],
+    criterionFeedback: [
+      { criterion: "Technical accuracy", score, maxScore: 5, feedback: "Mostly correct." },
+      { criterion: "Clarity", score: weak ? 2 : 4, maxScore: 5, feedback: "Readable." },
+      { criterion: "Example", score: weak ? 0 : 3, maxScore: 5, feedback: "Example could be more concrete." },
+    ],
+    suggestedAnswer: "A stronger answer would define the concept, mention trade-offs and give one concrete example.",
+    nextPracticeTopics: ["Error handling"],
+    communicationNote: "Clear structure.",
+    ...overrides,
   };
 }
 
@@ -129,6 +192,16 @@ const RELATIONS = {
   },
   interviewSession: {
     user: { model: "user", kind: "one", localKey: "userId" },
+    questions: { model: "interviewQuestion", kind: "many", foreignKey: "sessionId" },
+    answers: { model: "interviewAnswer", kind: "many", foreignKey: "sessionId" },
+  },
+  interviewQuestion: {
+    session: { model: "interviewSession", kind: "one", localKey: "sessionId" },
+    answer: { model: "interviewAnswer", kind: "one", localKey: "id", foreignKey: "questionId", reverse: true },
+  },
+  interviewAnswer: {
+    session: { model: "interviewSession", kind: "one", localKey: "sessionId" },
+    question: { model: "interviewQuestion", kind: "one", localKey: "questionId" },
   },
 };
 
@@ -139,7 +212,9 @@ const ON_DELETE = {
   jobDescription: { setNull: [["analysis", "jobDescriptionId"], ["jobApplication", "jobDescriptionId"]] },
   analysis: { setNull: [["jobApplication", "analysisId"]] },
   jobApplication: {},
-  interviewSession: {},
+  interviewSession: { cascade: [["interviewQuestion", "sessionId"], ["interviewAnswer", "sessionId"]] },
+  interviewQuestion: { cascade: [["interviewAnswer", "questionId"]] },
+  interviewAnswer: {},
 };
 
 const DEFAULTS = {
@@ -148,7 +223,9 @@ const DEFAULTS = {
   jobDescription: () => ({ companyName: null, sourceUrl: null, extractedRequirements: null }),
   analysis: () => ({ analysisMode: "ai", resumeId: null, jobDescriptionId: null, companyName: null, fileName: null, provider: null, model: null, resumeText: null }),
   jobApplication: () => ({ status: "INTERESTED", applicationDate: new Date(), jobUrl: null, nextFollowUpDate: null, notes: null, jobDescriptionId: null, resumeId: null, analysisId: null }),
-  interviewSession: () => ({ interviewType: "mixed", completedQuestionCount: 0, score: null, durationSeconds: null, status: "in_progress", analysisId: null, completedAt: null }),
+  interviewSession: () => ({ interviewType: "mixed", difficulty: "intermediate", durationMinutes: null, completedQuestionCount: 0, score: null, durationSeconds: null, status: "in_progress", scoringRubricVersion: null, analysisId: null, resumeId: null, jobDescriptionId: null, topics: null, source: "mock_interview", startedAt: new Date(), completedAt: null }),
+  interviewQuestion: () => ({ suggestedTimeSeconds: 180 }),
+  interviewAnswer: () => ({ programmingLanguage: null, status: "draft", evaluationResult: null, score: null, rubricVersion: null, submittedAt: null, evaluatedAt: null }),
 };
 
 export function fakePrisma() {
@@ -182,7 +259,7 @@ export function fakePrisma() {
       if (k === "AND") return v.every((w) => matches(model, row, w));
       const rel = RELATIONS[model]?.[k];
       if (rel && rel.kind === "one") {
-        const target = tables[rel.model].find((r) => r.id === row[rel.localKey]);
+        const target = rel.reverse ? tables[rel.model].find((r) => r[rel.foreignKey] === row.id) : tables[rel.model].find((r) => r.id === row[rel.localKey]);
         return target ? matches(rel.model, target, v) : false;
       }
       return matchValue(row[k], v);
@@ -212,7 +289,7 @@ export function fakePrisma() {
     const rel = RELATIONS[model][field];
     if (!rel) throw new Error(`fakePrisma: unknown relation ${model}.${field}`);
     if (rel.kind === "one") {
-      const target = tables[rel.model].find((r) => r.id === row[rel.localKey]);
+      const target = rel.reverse ? tables[rel.model].find((r) => r[rel.foreignKey] === row.id) : tables[rel.model].find((r) => r.id === row[rel.localKey]);
       return target ? project(rel.model, target, spec === true ? {} : spec) : null;
     }
     let rows = tables[rel.model].filter((r) => r[rel.foreignKey] === row.id);

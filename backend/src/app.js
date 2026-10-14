@@ -116,7 +116,18 @@ export function createApp({ env, prisma, llm, authService, storage }) {
   );
   app.use("/api/job-descriptions", createJobDescriptionRoutes({ authService: auth, repo: repos.jobDescription }));
   app.use("/api/applications", createApplicationRoutes({ authService: auth, repo: repos.application }));
-  app.use("/api/interviews", createInterviewRoutes({ authService: auth, repo: repos.interview }));
+  app.use(
+    "/api/interviews",
+    createInterviewRoutes({
+      authService: auth,
+      repo: repos.interview,
+      resumeRepo: repos.resume,
+      jobDescriptionRepo: repos.jobDescription,
+      analysisRepo: repos.analysis,
+      getLlm,
+      analysisRateLimit: env.ANALYSIS_RATE_LIMIT,
+    })
+  );
   app.use("/api/dashboard", createDashboardRoutes({ authService: auth, dashboardRepo: repos.dashboard }));
 
   app.use(notFoundHandler);

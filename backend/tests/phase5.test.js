@@ -315,13 +315,13 @@ test("interviews: record sessions and read history summary", async () => {
   assert.equal(empty.status, 200);
   assert.equal(empty.body.sessions.length, 0);
 
-  const bad = await api("/api/interviews", { method: "POST", token, body: { targetRole: "Frontend Developer", questionCount: 3, completedQuestionCount: 5 } });
+  const bad = await api("/api/interviews/practice-log", { method: "POST", token, body: { targetRole: "Frontend Developer", questionCount: 3, completedQuestionCount: 5 } });
   assert.equal(bad.status, 400);
 
-  const s = await api("/api/interviews", { method: "POST", token, body: { targetRole: "Frontend Developer", interviewType: "mixed", questionCount: 6, completedQuestionCount: 6, status: "completed", score: 80 } });
+  const s = await api("/api/interviews/practice-log", { method: "POST", token, body: { targetRole: "Frontend Developer", interviewType: "mixed", questionCount: 6, completedQuestionCount: 6, status: "completed", score: 80 } });
   assert.equal(s.status, 201);
   assert.ok(s.body.session.completedAt);
-  await api("/api/interviews", { method: "POST", token, body: { targetRole: "Frontend Developer", questionCount: 4, completedQuestionCount: 1 } });
+  await api("/api/interviews/practice-log", { method: "POST", token, body: { targetRole: "Frontend Developer", questionCount: 4, completedQuestionCount: 1 } });
 
   const hist = await api("/api/interviews/history", { token });
   assert.equal(hist.body.total, 2);
@@ -351,7 +351,7 @@ test("dashboard: empty state for a new user, then real metrics from the user's o
   const an = (await api("/api/analysis/resume", { method: "POST", token, body: { resumeId: resume.id, jobTitle: "FE", targetRole: "Frontend Developer", jobDescription: JOB_DESCRIPTION } })).body.analysis;
   await api("/api/applications", { method: "POST", token, body: { companyName: "Acme", jobTitle: "FE", status: "APPLIED", analysisId: an.id, nextFollowUpDate: "2020-01-01" } });
   await api("/api/applications", { method: "POST", token, body: { companyName: "Globex", jobTitle: "BE", status: "REJECTED" } });
-  await api("/api/interviews", { method: "POST", token, body: { targetRole: "Frontend Developer", questionCount: 3, completedQuestionCount: 3, status: "completed", score: 70 } });
+  await api("/api/interviews/practice-log", { method: "POST", token, body: { targetRole: "Frontend Developer", questionCount: 3, completedQuestionCount: 3, status: "completed", score: 70 } });
 
   const ov = await api("/api/dashboard/overview", { token });
   assert.equal(ov.body.totals.resumes, 1, "only own resumes counted");

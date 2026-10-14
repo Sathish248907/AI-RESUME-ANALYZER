@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   FileText, LayoutDashboard, History, Menu, X,
-  Sparkles, BookOpen, ChevronDown, Briefcase, FolderSearch, ClipboardList, LineChart, Bot,
+  Sparkles, BookOpen, ChevronDown, Briefcase, FolderSearch, ClipboardList, LineChart, Bot, Mic,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/services/authService";
@@ -21,6 +21,7 @@ const dashboardDropdown = [
   { href: "/dashboard/resume-analyzer", label: "Resume Analyzer", icon: Sparkles },
   { href: "/dashboard/my-resumes", label: "My Resumes", icon: FileText },
   { href: "/dashboard/analysis-history", label: "Analysis History", icon: Bot },
+  { href: "/dashboard/interviews", label: "Mock Interviews", icon: Mic },
   { href: "/dashboard/applications", label: "Applications", icon: ClipboardList },
   { href: "/dashboard/job-descriptions", label: "Job Descriptions", icon: BookOpen },
   { href: "/dashboard/analytics", label: "Analytics", icon: LineChart },

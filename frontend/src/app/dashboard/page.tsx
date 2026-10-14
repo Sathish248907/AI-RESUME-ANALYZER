@@ -96,7 +96,7 @@ export default function DashboardPage() {
             <StatCard icon={Bot} label="AI analyses" value={overview.totals.aiAnalyses} color="indigo" href="/dashboard/analysis-history" sub={overview.totals.demoAnalyses ? `+${overview.totals.demoAnalyses} demo` : undefined} />
             <StatCard icon={TrendingUp} label="Average match" value={overview.averageMatchScore.value === null ? "—" : `${overview.averageMatchScore.value}%`} color={overview.averageMatchScore.value === null ? "gray" : overview.averageMatchScore.value >= 80 ? "green" : overview.averageMatchScore.value >= 60 ? "amber" : "red"} sub={overview.averageMatchScore.sampleSize ? `${overview.averageMatchScore.sampleSize} scored AI` : "no scored analyses"} />
             <StatCard icon={Briefcase} label="Active applications" value={overview.totals.activeApplications} color="purple" href="/dashboard/applications" sub={`${overview.totals.applications} total`} />
-            <StatCard icon={Mic} label="Interviews practised" value={overview.totals.interviewsCompleted} color="pink" sub={overview.learningProgress ? `${overview.learningProgress.questionsPracticed} questions` : "none yet"} />
+            <StatCard icon={Mic} label="Interviews practised" value={overview.totals.interviewsCompleted} color="pink" href="/dashboard/interviews" sub={overview.learningProgress ? `${overview.learningProgress.questionsPracticed} questions` : "none yet"} />
             <StatCard icon={Bell} label="Follow-ups due" value={overview.followUps.dueSoon} color={overview.followUps.overdue ? "red" : "amber"} href="/dashboard/applications" sub={overview.followUps.overdue ? `${overview.followUps.overdue} overdue` : "next 14 days"} />
           </div>
 
@@ -215,6 +215,7 @@ export default function DashboardPage() {
             <Link href="/dashboard/my-resumes" className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50"><Upload className="w-4 h-4" /> Manage resumes</Link>
             <Link href="/dashboard/job-descriptions" className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50"><BookOpen className="w-4 h-4" /> Saved job descriptions ({overview.totals.jobDescriptions})</Link>
             <Link href="/dashboard/analytics" className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50"><LineChart className="w-4 h-4" /> Career analytics</Link>
+            <Link href="/dashboard/interviews/new" className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700"><Mic className="w-4 h-4" /> Start a mock interview</Link>
           </div>
         </>
       )}
