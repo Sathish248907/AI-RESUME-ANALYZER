@@ -155,7 +155,7 @@ test("delete removes the analysis for the owner", async () => {
   assert.equal((await api(`/api/analysis/${id}`, { method: "DELETE", token })).status, 404);
 });
 
-test("regenerate requires resume text when it was not stored, and works when supplied", async () => {
+test("regenerate requires resume text when it was not stored, and creates a NEW history record when supplied", async () => {
   const token = await registerUser("e@example.com");
   const created = await api("/api/analysis/resume", { method: "POST", token, body: validBody });
   const id = created.body.analysis.id;
@@ -165,10 +165,14 @@ test("regenerate requires resume text when it was not stored, and works when sup
 
   const callsBefore = llm.calls;
   const ok = await api(`/api/analysis/${id}/regenerate`, { method: "POST", token, body: { resumeText: RESUME_TEXT } });
-  assert.equal(ok.status, 200, JSON.stringify(ok.body));
-  assert.equal(ok.body.analysis.id, id);
+  assert.equal(ok.status, 201, JSON.stringify(ok.body).slice(0, 200));
+  assert.notEqual(ok.body.analysis.id, id, "regeneration must not overwrite the original");
+  assert.equal(ok.body.previousId, id);
   assert.equal(llm.calls, callsBefore + 1);
-  assert.ok(new Date(ok.body.analysis.updatedAt) >= new Date(created.body.analysis.updatedAt));
+  // both records are in the history
+  const list = await api("/api/analysis", { token });
+  assert.equal(list.body.analyses.length, 2);
+  assert.equal((await api(`/api/analysis/${id}`, { token })).status, 200, "original still retrievable");
 });
 
 test("provider failures map to clear, non-leaking error responses", async () => {
