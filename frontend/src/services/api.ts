@@ -7,7 +7,11 @@
  */
 import axios, { AxiosError } from "axios";
 
-export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+export const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:4000"
+).replace(/\/$/, "");
 const TOKEN_KEY = "resumeai_auth_token_v1";
 export const AUTH_CHANGED_EVENT = "resumeai:auth-changed";
 

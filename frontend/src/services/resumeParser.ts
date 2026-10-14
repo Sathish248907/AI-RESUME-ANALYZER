@@ -40,8 +40,11 @@ export function validateFile(file: File): ParseError | null {
   return null;
 }
 
+import { API_BASE_URL } from "./api";
+
 /**
- * Parse a resume file by sending it to the server-side API route.
+ * Parse a resume file by sending it to the backend /api/resume/parse endpoint
+ * (with fallback to local /api/parse-resume).
  * Falls back with a helpful message on failure.
  */
 export async function parseResumeFile(file: File): Promise<ParsedResume> {
@@ -51,17 +54,27 @@ export async function parseResumeFile(file: File): Promise<ParsedResume> {
   const formData = new FormData();
   formData.append("resume", file);
 
-  const res = await fetch("/api/parse-resume", {
-    method: "POST",
-    body: formData,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/resume/parse`, {
+      method: "POST",
+      body: formData,
+    });
+    if (res.status === 404 || res.status === 502) {
+      res = await fetch("/api/parse-resume", { method: "POST", body: formData });
+    }
+  } catch {
+    res = await fetch("/api/parse-resume", { method: "POST", body: formData });
+  }
 
   const data = await res.json();
 
   if (!res.ok) {
+    const errorMsg = data?.error?.message ?? data?.error ?? "Could not parse this file.";
     throw new Error(
-      data.error ??
-        "Could not parse this file. If it is a scanned PDF (image-based), text extraction is not supported — please use a text-based PDF or DOCX."
+      errorMsg.length > 0
+        ? errorMsg
+        : "Could not parse this file. If it is a scanned PDF (image-based), text extraction is not supported — please use a text-based PDF or DOCX."
     );
   }
 
