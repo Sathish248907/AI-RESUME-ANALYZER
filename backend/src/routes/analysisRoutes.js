@@ -12,11 +12,11 @@ const regenerateBodySchema = z.object({
 });
 
 /**
- * @param {{ authService: any, repo: any, getLlm: Function, storeResumeText: boolean, analysisRateLimit: number }} deps
+ * @param {{ authService, repo, resumeRepo, jobDescriptionRepo, getLlm: Function, storeResumeText: boolean, analysisRateLimit: number }} deps
  */
-export function createAnalysisRoutes({ authService, repo, getLlm, storeResumeText, analysisRateLimit }) {
+export function createAnalysisRoutes({ authService, repo, resumeRepo, jobDescriptionRepo, getLlm, storeResumeText, analysisRateLimit }) {
   const router = Router();
-  const controller = createAnalysisController({ repo, getLlm, storeResumeText });
+  const controller = createAnalysisController({ repo, resumeRepo, jobDescriptionRepo, getLlm, storeResumeText });
   const auth = requireAuth(authService);
   const aiLimiter = createAnalysisLimiter(analysisRateLimit);
 

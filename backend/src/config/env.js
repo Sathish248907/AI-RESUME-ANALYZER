@@ -23,6 +23,10 @@ const envSchema = z.object({
     .string()
     .default("false")
     .transform((v) => v.toLowerCase() === "true"),
+  // Original resume files: "none" discards them after text extraction (default);
+  // "local" keeps them under STORAGE_LOCAL_DIR with opaque names (owner-only download).
+  STORAGE_DRIVER: z.enum(["none", "local"]).default("none"),
+  STORAGE_LOCAL_DIR: z.string().default("uploads/private"),
 });
 
 const DEFAULT_MODELS = {

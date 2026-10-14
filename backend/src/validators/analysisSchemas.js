@@ -19,30 +19,61 @@ export const TARGET_ROLES = [
   "Software Engineer",
 ];
 
-export const analysisRequestSchema = z.object({
-  resumeText: z
-    .string({ required_error: "resumeText is required" })
-    .trim()
-    .min(200, "Resume text is too short to analyze (minimum 200 characters). Make sure the file is not image-based.")
-    .max(MAX_RESUME_CHARS, `Resume text exceeds ${MAX_RESUME_CHARS} characters.`),
-  jobTitle: z.string({ required_error: "jobTitle is required" }).trim().min(2, "Job title is required.").max(120),
-  targetRole: z.string({ required_error: "targetRole is required" }).trim().min(2, "Target role is required.").max(80),
-  jobDescription: z
-    .string({ required_error: "jobDescription is required" })
-    .trim()
-    .min(100, "Job description is too short to analyze (minimum 100 characters).")
-    .max(MAX_JOB_DESCRIPTION_CHARS, `Job description exceeds ${MAX_JOB_DESCRIPTION_CHARS} characters.`),
-  companyName: z.string().trim().max(120).optional().or(z.literal("")),
-  fileName: z.string().trim().max(255).optional(),
-});
+const optionalId = z.preprocess((v) => (v === "" || v === null ? undefined : v), z.string().regex(/^[a-z0-9]{20,32}$/i, "Invalid id.").optional());
+
+/**
+ * Analysis request. Either supply the texts directly or reference stored records:
+ *   - resumeId          → the stored resume's extracted text is used (resumeText may be omitted)
+ *   - jobDescriptionId  → the saved job description supplies jobDescription / jobTitle / targetRole / companyName when omitted
+ */
+export const analysisRequestSchema = z
+  .object({
+    resumeId: optionalId,
+    jobDescriptionId: optionalId,
+    resumeText: z
+      .string()
+      .trim()
+      .min(200, "Resume text is too short to analyze (minimum 200 characters). Make sure the file is not image-based.")
+      .max(MAX_RESUME_CHARS, `Resume text exceeds ${MAX_RESUME_CHARS} characters.`)
+      .optional(),
+    jobTitle: z.string().trim().min(2, "Job title is required.").max(120).optional(),
+    targetRole: z.string().trim().min(2, "Target role is required.").max(80).optional(),
+    jobDescription: z
+      .string()
+      .trim()
+      .min(100, "Job description is too short to analyze (minimum 100 characters).")
+      .max(MAX_JOB_DESCRIPTION_CHARS, `Job description exceeds ${MAX_JOB_DESCRIPTION_CHARS} characters.`)
+      .optional(),
+    companyName: z.string().trim().max(120).optional().or(z.literal("")),
+    fileName: z.string().trim().max(255).optional(),
+    /** Save the pasted job description as a reusable record and link it. */
+    saveJobDescription: z.coerce.boolean().optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (!v.resumeId && !v.resumeText) ctx.addIssue({ code: "custom", path: ["resumeText"], message: "resumeText is required unless resumeId is supplied." });
+    if (!v.jobDescriptionId) {
+      if (!v.jobDescription) ctx.addIssue({ code: "custom", path: ["jobDescription"], message: "jobDescription is required unless jobDescriptionId is supplied." });
+      if (!v.jobTitle) ctx.addIssue({ code: "custom", path: ["jobTitle"], message: "jobTitle is required unless jobDescriptionId is supplied." });
+      if (!v.targetRole) ctx.addIssue({ code: "custom", path: ["targetRole"], message: "targetRole is required unless jobDescriptionId is supplied." });
+    }
+  });
 
 export const idParamSchema = z.object({
   id: z.string().regex(/^[a-z0-9]{20,32}$/i, "Invalid analysis id."),
 });
 
+const dateInput = z.preprocess((v) => (typeof v === "string" && v.trim() ? new Date(v) : undefined), z.date().optional());
+
 export const listQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  cursor: z.string().regex(/^[a-z0-9]{20,32}$/i).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  targetRole: z.string().trim().min(1).max(80).optional(),
+  resumeId: optionalId,
+  jobDescriptionId: optionalId,
+  mode: z.enum(["ai", "demo"]).optional(),
+  from: dateInput,
+  to: dateInput,
+  sort: z.enum(["newest", "oldest", "score_desc", "score_asc"]).default("newest"),
 });
 
 // ─── AI output ───────────────────────────────────────────────────────────────

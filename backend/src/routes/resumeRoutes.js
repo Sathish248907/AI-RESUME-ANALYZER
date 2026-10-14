@@ -1,13 +1,17 @@
 import { Router } from "express";
 import multer from "multer";
 import { ApiError } from "../utils/errors.js";
-import { resumeController } from "../controllers/resumeController.js";
+import { validate } from "../middleware/validate.js";
+import { requireAuth } from "../middleware/auth.js";
+import { createResumeController } from "../controllers/resumeController.js";
 import { ALLOWED_MIME_TYPES, MAX_FILE_BYTES } from "../services/resume/resumeParserService.js";
+import { idParam } from "../validators/common.js";
+import { resumeListQuerySchema, resumeUpdateSchema, resumeUploadFieldsSchema } from "../validators/resumeSchemas.js";
 
-// Memory storage: the buffer is parsed and discarded; nothing touches the filesystem.
+// Memory storage: the buffer is parsed (and optionally handed to the storage driver); nothing is written by multer.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_FILE_BYTES, files: 1 },
+  limits: { fileSize: MAX_FILE_BYTES, files: 1, fields: 5 },
   fileFilter(_req, file, cb) {
     if (ALLOWED_MIME_TYPES.has(file.mimetype)) return cb(null, true);
     cb(new ApiError(415, "Only PDF and DOCX files are supported.", { code: "UNSUPPORTED_FILE_TYPE" }));
@@ -15,7 +19,7 @@ const upload = multer({
 });
 
 /** Translate multer's own errors into ApiErrors. */
-function handleUpload(req, res, next) {
+export function handleUpload(req, res, next) {
   upload.single("resume")(req, res, (err) => {
     if (!err) return next();
     if (err instanceof ApiError) return next(err);
@@ -25,9 +29,25 @@ function handleUpload(req, res, next) {
   });
 }
 
-export function createResumeRoutes() {
+/** Stateless parsing (used by demo mode, no account required): POST /api/resume/parse */
+export function createResumeParseRoutes(deps) {
   const router = Router();
-  // Parsing does not require sign-in so the demo flow keeps working without an account.
-  router.post("/parse", handleUpload, resumeController.parse);
+  const controller = createResumeController(deps);
+  router.post("/parse", handleUpload, controller.parse);
+  return router;
+}
+
+/** Stored resumes for the signed-in user: /api/resumes */
+export function createResumeRoutes(deps) {
+  const router = Router();
+  const controller = createResumeController(deps);
+  const auth = requireAuth(deps.authService);
+
+  router.post("/", auth, handleUpload, validate(resumeUploadFieldsSchema), controller.upload);
+  router.get("/", auth, validate(resumeListQuerySchema, "query"), controller.list);
+  router.get("/:id", auth, validate(idParam, "params"), controller.getOne);
+  router.get("/:id/download", auth, validate(idParam, "params"), controller.download);
+  router.patch("/:id", auth, validate(idParam, "params"), validate(resumeUpdateSchema), controller.update);
+  router.delete("/:id", auth, validate(idParam, "params"), controller.remove);
   return router;
 }
