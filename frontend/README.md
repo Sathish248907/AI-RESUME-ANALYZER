@@ -1,138 +1,56 @@
-# ResumeAI — AI-Powered Resume Analyzer
+# AI Resume Analyzer — Frontend
 
-Upload a resume (PDF/DOCX) and a job description to get instant AI analysis:
-- Resume–job match score
-- Matched & missing skills
-- ATS compatibility check
-- Keyword analysis
-- Improvement suggestions
-- Likely interview questions
-- Analysis history & progress dashboard
+Next.js 13 (App Router) + React 18 + TypeScript + Tailwind CSS client for the AI Resume Analyzer.
+It talks to the Express backend in `../backend` through a single axios client (`src/services/api.ts`).
 
-## Tech Stack
+See the root [README](../README.md) for the full project overview and `../docs/` for architecture, API and setup guides.
 
-| Layer | Tech |
-|---|---|
-| Framework | Next.js 14 (App Router) |
-| Styling | Tailwind CSS v3 |
-| Database | PostgreSQL + Prisma ORM |
-| Auth | Auth.js v5 (GitHub + Google OAuth) |
-| AI | Google Gemini 1.5 Flash |
-| File parsing | pdf-parse (PDF), mammoth (DOCX) |
-| Charts | Recharts |
+## Run
 
----
-
-## Prerequisites
-
-- **Node.js ≥ 18.17.0** (Next.js 14 requirement)  
-  → Check: `node --version`  
-  → Download: https://nodejs.org (LTS)
-- **PostgreSQL** running locally or a hosted instance (Supabase, Neon, Railway are free)
-- **Gemini API key** — free at https://aistudio.google.com/app/apikey
-- (Optional) GitHub and/or Google OAuth app for authentication
-
----
-
-## Setup
-
-### 1. Install dependencies
 ```bash
 npm install
+cp .env.example .env     # set NEXT_PUBLIC_API_URL (default http://localhost:4000)
+npm run dev              # http://localhost:3001
 ```
 
-### 2. Configure environment variables
-Copy `.env` and fill in your values:
+Other scripts: `npm run build`, `npm start`, `npx tsc --noEmit` (type-check).
 
-```env
-# PostgreSQL connection string
-DATABASE_URL="postgresql://postgres:password@localhost:5432/resume_analyzer"
+## Environment
 
-# Auth.js — generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-NEXTAUTH_SECRET="your-secret"
-NEXTAUTH_URL="http://localhost:3000"
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_API_URL` | Base URL of the backend API. Public — contains no secrets. |
+| `DATABASE_URL`, `NEXTAUTH_*`, `GEMINI_API_KEY`, OAuth ids | Only used by the legacy Phase 1 Next.js API routes (`/analyze`, `/api/analyze`, `/api/history`). Optional. Never prefix a secret with `NEXT_PUBLIC_`. |
 
-# OAuth providers (optional — remove providers you don't use)
-GOOGLE_CLIENT_ID=""
-GOOGLE_CLIENT_SECRET=""
-GITHUB_CLIENT_ID=""
-GITHUB_CLIENT_SECRET=""
+## Structure (how the requested layout maps onto Next.js)
 
-# Gemini AI
-GEMINI_API_KEY="your-gemini-api-key"
-```
+| Requested folder | Here |
+|---|---|
+| `pages/`, `routes/`, `App.jsx`, `main.jsx` | `src/app/` — file-system routing and the root layout (`src/app/layout.tsx`). `src/routes/index.ts` holds route constants. |
+| `components/common` | `src/components/common` (Badge, Button, Card, ProgressBar) |
+| `components/layout` | `src/components/layout` (Navbar, Footer) |
+| `components/resume` | `src/components/resume` (ResumeDropzone) |
+| `components/analyzer` | `src/components/analyzer` + `src/components/results` (analysis results UI) |
+| `components/interview` | `src/components/interview` (InterviewQuestionsList) |
+| `components/dashboard` | `src/components/dashboard`, `src/components/job-analysis` |
+| `layouts/` | `src/layouts` (DashboardLayout) |
+| `hooks/` | `src/hooks` (useAuth) |
+| `services/api.js` | `src/services/api.ts`, plus `authService.ts`, `resumeAnalysisService.ts`, Phase 3 job services |
+| `context/`, `store/` | `src/context` (AuthContext), `src/store` (localStorage helpers) |
+| `utils/`, `constants/` | `src/utils`, `src/lib/utils.ts`, `src/constants` |
+| `assets/` | `public/` (static files) and `src/assets` |
 
-### 3. Set up the database
-```bash
-# Push schema to your database
-npm run db:push
+## Pages
 
-# Or run migrations (recommended for production)
-npm run db:migrate
-```
+| Route | What it does |
+|---|---|
+| `/` | Landing page |
+| `/auth/login` | Email/password sign-in and registration against the backend (JWT) |
+| `/dashboard` | Overview of resume and job analyses |
+| `/dashboard/resume-analyzer` | Upload a resume + job description; **AI mode** (backend) or **Demo mode** (local, illustrative) |
+| `/dashboard/resume-analysis/[id]` | Results: score and breakdown, skills with evidence, ATS checks, improvements, interview questions; regenerate / delete |
+| `/dashboard/my-resumes` | History of AI (account) and demo (browser) analyses |
+| `/dashboard/job-analyzer`, `/dashboard/job-analysis/[id]`, `/dashboard/job-history` | Rule-based job-description analysis (Phase 3) |
+| `/analyze`, `/history`, `/auth/signin` | Legacy Phase 1 pages using Next.js API routes and Gemini directly |
 
-### 4. Run the development server
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
-
----
-
-## Project Structure
-
-```
-src/
-├── app/
-│   ├── page.tsx                  # Landing page
-│   ├── analyze/page.tsx          # Upload + analyze page
-│   ├── dashboard/page.tsx        # Progress dashboard
-│   ├── history/page.tsx          # Analysis history
-│   ├── auth/signin/page.tsx      # Sign-in page
-│   └── api/
-│       ├── parse-resume/route.ts # PDF/DOCX text extraction
-│       ├── analyze/route.ts      # AI analysis endpoint
-│       ├── history/route.ts      # Saved analyses CRUD
-│       └── auth/[...nextauth]/   # Auth.js handler
-├── components/
-│   ├── ui/                       # Button, Card, Badge, ProgressBar
-│   ├── layout/                   # Navbar, Footer
-│   ├── resume/                   # ResumeDropzone
-│   └── dashboard/                # ScoreGauge, SkillsPanel, etc.
-├── lib/
-│   ├── prisma.ts                 # Prisma client singleton
-│   ├── gemini.ts                 # Gemini AI functions
-│   ├── auth.ts                   # Auth.js config
-│   └── utils.ts                  # Helpers
-└── types/index.ts                # Shared TypeScript types
-```
-
----
-
-## Using without a database
-
-The app works without PostgreSQL — analysis results just won't be saved to history. 
-The `/dashboard` and `/history` pages will show empty states gracefully.
-
----
-
-## Getting a Gemini API Key
-
-1. Go to https://aistudio.google.com/app/apikey
-2. Sign in with a Google account
-3. Click **Create API Key**
-4. Copy it into your `.env` as `GEMINI_API_KEY`
-
-The free tier includes generous usage limits for personal/portfolio projects.
-
----
-
-## Production deployment
-
-Recommended: [Vercel](https://vercel.com) + [Neon](https://neon.tech) (serverless Postgres, free tier).
-
-```bash
-npm run build
-npm start
-```
+Demo analyses are clearly labelled as illustrative samples; AI analyses are labelled with the provider that produced them.
