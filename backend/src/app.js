@@ -26,6 +26,12 @@ import { createStorage } from "./services/storage/storageService.js";
 import { logger } from "./utils/logger.js";
 
 const REQUEST_TIMEOUT_MS = 120_000;
+/** Routes that call the LLM: timeout must exceed LLM_TIMEOUT_MS × (retries + 1). */
+const AI_ROUTE = /^\/api\/(analysis\/resume|analysis\/[a-z0-9]+\/regenerate|interviews|interviews\/[a-z0-9]+\/answers\/[a-z0-9]+\/evaluate)$/i;
+
+export function aiRequestBudgetMs(env) {
+  return env.LLM_TIMEOUT_MS * (env.LLM_MAX_RETRIES + 1) + 30_000;
+}
 
 /**
  * @param {{ env: ReturnType<import("./config/env.js").loadEnv>, prisma: import("@prisma/client").PrismaClient,
@@ -53,8 +59,11 @@ export function createApp({ env, prisma, llm, authService, storage }) {
   app.use(globalLimiter);
 
   // Per-request timeout so a hung provider call cannot pin a connection forever.
+  // AI routes get a longer budget so the client never gives up before the server does.
+  const aiBudget = aiRequestBudgetMs(env);
   app.use((req, res, next) => {
-    res.setTimeout(REQUEST_TIMEOUT_MS, () => {
+    const isAi = req.method === "POST" && AI_ROUTE.test(req.path);
+    res.setTimeout(isAi ? aiBudget : REQUEST_TIMEOUT_MS, () => {
       if (!res.headersSent) {
         res.status(504).json({ error: { code: "REQUEST_TIMEOUT", message: "The request took too long to complete.", retryable: true } });
       }
@@ -93,7 +102,7 @@ export function createApp({ env, prisma, llm, authService, storage }) {
   app.get("/api/health", (_req, res) => {
     res.json({
       status: "ok",
-      ai: { configured: env.LLM_CONFIGURED, provider: env.LLM_PROVIDER, model: env.LLM_MODEL },
+      ai: { configured: env.LLM_CONFIGURED, provider: env.LLM_PROVIDER, model: env.LLM_MODEL, requestBudgetMs: aiBudget },
       storage: { driver: files.name, retainsOriginals: files.enabled },
       time: new Date().toISOString(),
     });

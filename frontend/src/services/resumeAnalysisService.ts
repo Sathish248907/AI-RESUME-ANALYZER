@@ -107,8 +107,11 @@ export async function getBackendHealth(): Promise<BackendHealth | null> {
   }
 }
 
+/** AI calls can legitimately take minutes when the provider is slow; this must exceed the backend's AI request budget. */
+export const AI_CALL_TIMEOUT_MS = 330_000;
+
 export async function runAiAnalysis(input: AnalyzeRequest): Promise<AiAnalysisRecord> {
-  const { data } = await api.post<{ analysis: AiAnalysisRecord }>("/api/analysis/resume", input);
+  const { data } = await api.post<{ analysis: AiAnalysisRecord }>("/api/analysis/resume", input, { timeout: AI_CALL_TIMEOUT_MS });
   return data.analysis;
 }
 
@@ -128,7 +131,7 @@ export async function deleteAiAnalysis(id: string): Promise<void> {
 
 /** Regeneration creates a NEW history record; the returned analysis has a new id and `previousId` points at the original. */
 export async function regenerateAiAnalysis(id: string, resumeText?: string): Promise<AiAnalysisRecord & { previousId: string }> {
-  const { data } = await api.post<{ analysis: AiAnalysisRecord; previousId: string }>(`/api/analysis/${encodeURIComponent(id)}/regenerate`, resumeText ? { resumeText } : {});
+  const { data } = await api.post<{ analysis: AiAnalysisRecord; previousId: string }>(`/api/analysis/${encodeURIComponent(id)}/regenerate`, resumeText ? { resumeText } : {}, { timeout: AI_CALL_TIMEOUT_MS });
   return { ...data.analysis, previousId: data.previousId };
 }
 

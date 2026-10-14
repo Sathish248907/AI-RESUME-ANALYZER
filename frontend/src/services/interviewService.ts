@@ -121,7 +121,7 @@ export interface CreateInterviewInput {
 }
 
 export async function createInterview(input: CreateInterviewInput): Promise<InterviewSession> {
-  const { data } = await api.post<{ session: InterviewSession }>("/api/interviews", input, { timeout: 150_000 });
+  const { data } = await api.post<{ session: InterviewSession }>("/api/interviews", input, { timeout: 330_000 });
   return data.session;
 }
 

@@ -1,6 +1,6 @@
 import { loadEnv } from "./config/env.js";
 import { getPrisma, disconnectPrisma } from "./config/prisma.js";
-import { createApp } from "./app.js";
+import { createApp, aiRequestBudgetMs } from "./app.js";
 import { logger } from "./utils/logger.js";
 
 let env;
@@ -19,8 +19,13 @@ const prisma = getPrisma();
 const app = createApp({ env, prisma });
 
 const server = app.listen(env.PORT, () => {
-  logger.info("API listening", { port: env.PORT, provider: env.LLM_PROVIDER, model: env.LLM_MODEL, origins: env.FRONTEND_ORIGINS });
+  logger.info("API listening", { port: env.PORT, provider: env.LLM_PROVIDER, model: env.LLM_MODEL, origins: env.FRONTEND_ORIGINS, aiRequestBudgetMs: aiRequestBudgetMs(env) });
 });
+// Node's HTTP server defaults (requestTimeout 300 s, headersTimeout 60 s) would reset long AI requests
+// before Express's own per-route timeout fires; align them with the AI budget.
+server.requestTimeout = aiRequestBudgetMs(env) + 60_000;
+server.headersTimeout = 65_000;
+server.keepAliveTimeout = 65_000;
 
 async function shutdown(signal) {
   logger.info("Shutting down", { signal });

@@ -16,7 +16,7 @@ import CodeEditor from "@/components/interview/CodeEditor";
 import { useAuth } from "@/hooks/useAuth";
 import { toApiClientError, type ApiClientError } from "@/services/api";
 import { completeInterview, getInterview, INTERVIEW_TYPE_LABELS, saveAnswerDraft, skipQuestion, type InterviewAnswer, type InterviewQuestion, type InterviewSession, type ProgrammingLanguage } from "@/services/interviewService";
-import { countWords, evaluateAnswer } from "@/services/answerEvaluationService";
+import { countWords, evaluateAnswer, waitForEvaluation } from "@/services/answerEvaluationService";
 import { cn } from "@/lib/utils";
 
 const DIFF_CLS: Record<string, string> = { beginner: "bg-green-50 text-green-800 border-green-200", intermediate: "bg-amber-50 text-amber-800 border-amber-200", advanced: "bg-red-50 text-red-800 border-red-200" };
@@ -127,6 +127,18 @@ export default function MockInterviewSessionPage() {
       setShowFeedback(true);
     } catch (err) {
       const e = toApiClientError(err);
+      if (e.code === "EVALUATION_IN_PROGRESS" || e.code === "TIMEOUT") {
+        // The server is still scoring (or finished after we gave up) — wait for the stored result instead of failing.
+        toast.info("Still evaluating — waiting for the result…");
+        const answer = await waitForEvaluation(session.id, current.id).catch(() => null);
+        if (answer && (answer.status === "evaluated" || answer.status === "insufficient")) {
+          setDrafts((d) => ({ ...d, [current.id]: { ...draft, dirty: false } }));
+          await load();
+          setShowFeedback(true);
+          setEvaluating(false);
+          return;
+        }
+      }
       setEvalError(e);
       await load(); // pick up "failed" state from the server
     } finally {

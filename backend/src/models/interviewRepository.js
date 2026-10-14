@@ -8,6 +8,8 @@ import { notFound, ApiError } from "../utils/errors.js";
 export const INTERVIEW_TYPES = ["technical", "hr", "coding", "resume_based", "behavioral", "mixed", "project"];
 export const INTERVIEW_STATUSES = ["in_progress", "completed", "abandoned"];
 export const ANSWER_STATUSES = ["draft", "submitted", "evaluating", "evaluated", "insufficient", "skipped", "failed"];
+/** An "evaluating" claim older than this is treated as abandoned (e.g. the process died mid-call) and may be re-claimed. */
+export const STALE_EVALUATION_MS = 6 * 60 * 1000;
 
 const SESSION_LIST_SELECT = {
   id: true, targetRole: true, interviewType: true, difficulty: true, durationMinutes: true, questionCount: true, completedQuestionCount: true,
@@ -117,7 +119,13 @@ export function createInterviewRepository(prisma) {
     async beginEvaluation(sessionId, questionId, userId, { answerText, programmingLanguage }) {
       const { session, answer } = await this.getQuestion(sessionId, questionId, userId);
       if (session.status !== "in_progress") throw new ApiError(409, "This interview is no longer in progress.", { code: "SESSION_CLOSED" });
-      if (answer?.status === "evaluating") throw new ApiError(409, "This answer is already being evaluated. Please wait for the result.", { code: "EVALUATION_IN_PROGRESS" });
+      if (answer?.status === "evaluating") {
+        const claimedAt = new Date(answer.submittedAt ?? answer.updatedAt).getTime();
+        if (Date.now() - claimedAt < STALE_EVALUATION_MS) {
+          throw new ApiError(409, "This answer is already being evaluated. Please wait for the result.", { code: "EVALUATION_IN_PROGRESS", retryable: true });
+        }
+        // stale claim → fall through and re-claim
+      }
       if (answer && (answer.status === "evaluated" || answer.status === "insufficient") && answer.answerText === (answerText ?? answer.answerText)) {
         return { answer, alreadyEvaluated: true };
       }

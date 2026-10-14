@@ -17,9 +17,21 @@ export async function evaluateAnswer(sessionId: string, questionId: string, inpu
   const { data } = await api.post<EvaluateResponse>(
     `/api/interviews/${encodeURIComponent(sessionId)}/answers/${encodeURIComponent(questionId)}/evaluate`,
     input,
-    { timeout: 150_000 }
+    { timeout: 330_000 }
   );
   return data;
+}
+
+/** Poll the stored answer until an in-flight evaluation finishes (used after a 409 EVALUATION_IN_PROGRESS). */
+export async function waitForEvaluation(sessionId: string, questionId: string, { intervalMs = 5000, maxWaitMs = 330_000 } = {}): Promise<InterviewAnswer | null> {
+  const { getAnswer } = await import("./interviewService");
+  const started = Date.now();
+  while (Date.now() - started < maxWaitMs) {
+    const { answer } = await getAnswer(sessionId, questionId);
+    if (answer && answer.status !== "evaluating") return answer;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return null;
 }
 
 /** Colour helpers shared by feedback and report views. */

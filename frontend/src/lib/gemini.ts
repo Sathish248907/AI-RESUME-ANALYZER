@@ -2,13 +2,15 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { AnalysisResult, JobDescriptionParsed } from "@/types";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? "");
+// gemini-1.5-flash was retired; override with GEMINI_MODEL if needed.
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-flash-latest";
 
 export async function analyzeResumeWithAI(
   resumeText: string,
   jobDescription: string,
   jobTitle: string
 ): Promise<AnalysisResult> {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
 
   const prompt = `
 You are an expert HR recruiter and ATS (Applicant Tracking System) specialist. 
@@ -71,7 +73,7 @@ Rules:
 export async function parseJobDescription(
   jobDescription: string
 ): Promise<JobDescriptionParsed> {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
 
   const prompt = `
 Extract structured information from this job description. Return ONLY a valid JSON object (no markdown):
