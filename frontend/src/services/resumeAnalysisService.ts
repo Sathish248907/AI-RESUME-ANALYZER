@@ -60,6 +60,9 @@ export interface AiAnalysisRecord {
   targetRole: string;
   companyName: string | null;
   fileName: string | null;
+  resumeId?: string | null;
+  resumeName?: string | null;
+  jobDescriptionId?: string | null;
   analysisMode: "ai" | "demo";
   matchScore: number;
   provider: string | null;
@@ -74,12 +77,18 @@ export interface AiAnalysisRecord {
 export type AiAnalysisListItem = Omit<AiAnalysisRecord, "result" | "canRegenerate" | "jobDescription">;
 
 export interface AnalyzeRequest {
-  resumeText: string;
-  jobTitle: string;
-  targetRole: string;
-  jobDescription: string;
+  /** Either resumeText or resumeId (a stored resume) is required. */
+  resumeText?: string;
+  resumeId?: string;
+  /** When jobDescriptionId is given the saved description supplies title/role/text unless overridden. */
+  jobDescriptionId?: string;
+  jobTitle?: string;
+  targetRole?: string;
+  jobDescription?: string;
   companyName?: string;
   fileName?: string;
+  /** Save the pasted job description as a reusable record and link it to the analysis. */
+  saveJobDescription?: boolean;
 }
 
 export interface BackendHealth {
@@ -117,9 +126,10 @@ export async function deleteAiAnalysis(id: string): Promise<void> {
   await api.delete(`/api/analysis/${encodeURIComponent(id)}`);
 }
 
-export async function regenerateAiAnalysis(id: string, resumeText?: string): Promise<AiAnalysisRecord> {
-  const { data } = await api.post<{ analysis: AiAnalysisRecord }>(`/api/analysis/${encodeURIComponent(id)}/regenerate`, resumeText ? { resumeText } : {});
-  return data.analysis;
+/** Regeneration creates a NEW history record; the returned analysis has a new id and `previousId` points at the original. */
+export async function regenerateAiAnalysis(id: string, resumeText?: string): Promise<AiAnalysisRecord & { previousId: string }> {
+  const { data } = await api.post<{ analysis: AiAnalysisRecord; previousId: string }>(`/api/analysis/${encodeURIComponent(id)}/regenerate`, resumeText ? { resumeText } : {});
+  return { ...data.analysis, previousId: data.previousId };
 }
 
 /** Demo analysis ids are generated client-side with this prefix; everything else is a backend id. */

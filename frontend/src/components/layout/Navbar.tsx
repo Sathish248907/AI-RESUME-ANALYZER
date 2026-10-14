@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   FileText, LayoutDashboard, History, Menu, X,
-  Sparkles, BookOpen, ChevronDown, Briefcase, FolderSearch,
+  Sparkles, BookOpen, ChevronDown, Briefcase, FolderSearch, ClipboardList, LineChart, Bot,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/services/authService";
@@ -18,11 +18,15 @@ const primaryLinks = [
 
 const dashboardDropdown = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/resume-analyzer", label: "Resume Analyzer", icon: FileText },
-  { href: "/dashboard/my-resumes", label: "My Resumes", icon: BookOpen },
-  { href: "/dashboard/job-analyzer", label: "Job Analyzer", icon: Briefcase },
-  { href: "/dashboard/job-history", label: "Saved Jobs", icon: FolderSearch },
-  { href: "/history", label: "AI History", icon: History },
+  { href: "/dashboard/resume-analyzer", label: "Resume Analyzer", icon: Sparkles },
+  { href: "/dashboard/my-resumes", label: "My Resumes", icon: FileText },
+  { href: "/dashboard/analysis-history", label: "Analysis History", icon: Bot },
+  { href: "/dashboard/applications", label: "Applications", icon: ClipboardList },
+  { href: "/dashboard/job-descriptions", label: "Job Descriptions", icon: BookOpen },
+  { href: "/dashboard/analytics", label: "Analytics", icon: LineChart },
+  { href: "/dashboard/job-analyzer", label: "Job Analyzer (rules)", icon: Briefcase },
+  { href: "/dashboard/job-history", label: "Local Job Analyses", icon: FolderSearch },
+  { href: "/history", label: "Legacy AI History", icon: History },
 ];
 
 export default function Navbar() {
@@ -93,7 +97,7 @@ export default function Navbar() {
               </button>
 
               {dropdownOpen && (
-                <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50">
+                <div className="absolute top-full left-0 mt-1 w-60 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50 max-h-[80vh] overflow-y-auto">
                   {dashboardDropdown.map(({ href, label, icon: Icon }) => (
                     <Link
                       key={href}

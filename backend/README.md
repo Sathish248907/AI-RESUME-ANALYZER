@@ -124,3 +124,7 @@ npm test
 ```
 
 Runs with `node --test` and needs no database or network: scoring, validation (request, AI output, env), ATS/sanitisation/prompt rules, and full HTTP tests of every endpoint with an in-memory data store and a fake provider (auth, ownership, delete, regenerate, provider timeout / rate limit / malformed output / unconfigured, CORS, oversized bodies).
+
+## Phase 5 endpoints
+
+Resumes, saved job descriptions, applications, interview history and dashboard metrics are documented in [../docs/phase5.md](../docs/phase5.md). Run `npx prisma migrate deploy` to apply the new migration.

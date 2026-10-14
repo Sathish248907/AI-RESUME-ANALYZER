@@ -229,3 +229,7 @@ Detailed request/response payloads are documented in [`docs/api.md`](docs/api.md
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
+## Phase 5 — Persistent dashboard, resume history, job tracking
+
+See [docs/phase5.md](docs/phase5.md) for the schema changes, migration commands, new API endpoints, pages and known limitations.

@@ -105,7 +105,13 @@ export default function AnalysisResultsLayout({ result }: AnalysisResultsLayoutP
         )}
         {activeTab === "ats" && <ATSReadinessCard checks={result.atsChecks} mode={result.analysisMode} />}
         {activeTab === "recommendations" && <RecommendationList recommendations={result.recommendations} strengths={result.strengths} />}
-        {activeTab === "interview" && <InterviewQuestionsList questions={result.interviewQuestions} mode={result.analysisMode} />}
+        {activeTab === "interview" && (
+          <InterviewQuestionsList
+            questions={result.interviewQuestions}
+            mode={result.analysisMode}
+            session={isAi ? { analysisId: result.id, targetRole: result.targetRole, enabled: true } : undefined}
+          />
+        )}
       </div>
     </div>
   );

@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { HelpCircle, Code, User, FileText, ChevronDown, ChevronUp, ArrowRight } from "lucide-react";
+import { HelpCircle, Code, User, FileText, ChevronDown, ChevronUp, ArrowRight, CheckSquare, Square, Save } from "lucide-react";
+import { recordInterviewSession } from "@/services/interviewService";
+import { toApiClientError } from "@/services/api";
+import { useToast } from "@/components/common/Toast";
 import type { InterviewQuestion } from "@/services/mockAnalysisService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/common/Card";
 import { cn } from "@/lib/utils";
@@ -10,6 +13,8 @@ import Link from "next/link";
 interface InterviewQuestionsListProps {
   questions: InterviewQuestion[];
   mode?: "demo" | "ai";
+  /** When provided (AI analyses for a signed-in user), practised questions can be saved as an interview session. */
+  session?: { analysisId: string; targetRole: string; enabled: boolean };
 }
 
 const TYPE_META = {
@@ -26,10 +31,47 @@ const DIFFICULTY_META = {
 
 type TypeFilter = "all" | InterviewQuestion["type"];
 
-export default function InterviewQuestionsList({ questions, mode = "demo" }: InterviewQuestionsListProps) {
+export default function InterviewQuestionsList({ questions, mode = "demo", session }: InterviewQuestionsListProps) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [practised, setPractised] = useState<Set<number>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [savedCount, setSavedCount] = useState<number | null>(null);
+  const toast = useToast();
   const isAi = mode === "ai";
+  const canRecord = Boolean(session?.enabled);
+
+  function togglePractised(idx: number) {
+    setPractised((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }
+
+  async function saveSession() {
+    if (!session) return;
+    setSaving(true);
+    try {
+      const types = new Set(questions.filter((_, i) => practised.has(i)).map((q) => q.type));
+      const interviewType = types.size === 1 ? (types.has("technical") ? "technical" : types.has("behavioral") ? "behavioral" : "project") : "mixed";
+      await recordInterviewSession({
+        targetRole: session.targetRole,
+        interviewType,
+        questionCount: questions.length,
+        completedQuestionCount: practised.size,
+        status: "completed",
+        analysisId: session.analysisId,
+      });
+      setSavedCount(practised.size);
+      toast.success(`Practice session saved (${practised.size} of ${questions.length} questions).`);
+    } catch (err) {
+      toast.error(toApiClientError(err).message);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const filtered = typeFilter === "all"
     ? questions
@@ -73,9 +115,19 @@ export default function InterviewQuestionsList({ questions, mode = "demo" }: Int
           })}
         </div>
 
+        {canRecord && (
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 text-xs text-purple-900">
+            <span>Tick the questions you practised, then save the session to your interview history ({practised.size}/{questions.length} ticked).</span>
+            <button type="button" onClick={saveSession} disabled={saving || practised.size === 0} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50">
+              <Save className="w-3.5 h-3.5" /> {saving ? "Saving..." : savedCount !== null ? "Save again" : "Save practice session"}
+            </button>
+          </div>
+        )}
+
         {/* Questions */}
         <div className="space-y-2">
-          {filtered.map((q, i) => {
+          {filtered.map((q) => {
+            const i = questions.indexOf(q);
             const meta = TYPE_META[q.type];
             const Icon = meta.icon;
             const isOpen = expanded === i;
@@ -89,6 +141,19 @@ export default function InterviewQuestionsList({ questions, mode = "demo" }: Int
                   className="w-full flex items-start gap-3 p-4 text-left"
                   aria-expanded={isOpen}
                 >
+                  {canRecord && (
+                    <span
+                      role="checkbox"
+                      aria-checked={practised.has(i)}
+                      tabIndex={0}
+                      onClick={(e) => { e.stopPropagation(); togglePractised(i); }}
+                      onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); e.stopPropagation(); togglePractised(i); } }}
+                      className="mt-1 text-purple-600 flex-shrink-0"
+                      title="Mark as practised"
+                    >
+                      {practised.has(i) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4 text-gray-300" />}
+                    </span>
+                  )}
                   <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5", meta.bg)}>
                     <Icon className={cn("w-3.5 h-3.5", meta.color)} />
                   </div>

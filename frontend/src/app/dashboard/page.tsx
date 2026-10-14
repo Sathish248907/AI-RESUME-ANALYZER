@@ -1,369 +1,275 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { AnalysisRecord } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/common/Card";
-import { ProgressBar } from "@/components/common/ProgressBar";
 import { Badge } from "@/components/common/Badge";
-import { formatDate, getScoreColor, getScoreLabel } from "@/lib/utils";
+import { SkeletonCard, SkeletonStatRow } from "@/components/common/Skeleton";
+import EmptyState from "@/components/common/EmptyState";
+import Button from "@/components/common/Button";
 import JobAnalysisHistory from "@/components/job-analysis/JobAnalysisHistory";
+import { useAuth } from "@/hooks/useAuth";
+import { toApiClientError } from "@/services/api";
+import { getDashboardActivity, getDashboardOverview, type DashboardActivity, type DashboardOverview } from "@/services/dashboardService";
+import { STATUS_LABELS, STATUS_STYLES } from "@/services/jobApplicationService";
 import { getJobAnalysisStats, type JobAnalysisStats } from "@/services/jobAnalysisStorage";
-import {
-  BarChart3,
-  FileText,
-  TrendingUp,
-  Target,
-  ArrowRight,
-  PlusCircle,
-  Briefcase,
-  Star,
-  FolderSearch,
-  SearchCode,
-  Layers,
-} from "lucide-react";
-
-/** Clearly-labelled placeholder content shown when no job analyses are saved yet. */
-const DEMO_JOB_STATS = {
-  topSkills: [
-    { name: "React", count: 4 },
-    { name: "TypeScript", count: 4 },
-    { name: "Node.js", count: 3 },
-    { name: "AWS", count: 2 },
-    { name: "PostgreSQL", count: 2 },
-    { name: "Docker", count: 2 },
-  ],
-  recentRoles: ["Frontend Developer", "Full Stack Developer", "Backend Developer"],
-};
+import { getAnalysisMetas, type StoredAnalysisMeta } from "@/services/analysisStorage";
+import { cn, formatDate, getScoreColor } from "@/lib/utils";
+import { BarChart3, FileText, TrendingUp, Target, ArrowRight, PlusCircle, Briefcase, Star, FolderSearch, SearchCode, Layers, LogIn, Bot, FlaskConical, Bell, Lightbulb, Mic, Upload, BookOpen, LineChart } from "lucide-react";
 
 export default function DashboardPage() {
-  const [analyses, setAnalyses] = useState<AnalysisRecord[]>([]);
+  const { user, ready } = useAuth();
+  const [overview, setOverview] = useState<DashboardOverview | null>(null);
+  const [activity, setActivity] = useState<DashboardActivity | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [jobStats, setJobStats] = useState<JobAnalysisStats | null>(null);
+  const [demoAnalyses, setDemoAnalyses] = useState<StoredAnalysisMeta[]>([]);
+
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [o, a] = await Promise.all([getDashboardOverview(), getDashboardActivity(5)]);
+      setOverview(o);
+      setActivity(a);
+    } catch (err) {
+      setError(toApiClientError(err).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
 
   useEffect(() => {
     setJobStats(getJobAnalysisStats(5));
-    fetch("/api/history")
-      .then((r) => r.json())
-      .then((d) => setAnalyses(d.analyses ?? []))
-      .catch(() => setAnalyses([]))
-      .finally(() => setLoading(false));
+    setDemoAnalyses(getAnalysisMetas());
   }, []);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px] text-gray-400">
-        <svg className="animate-spin w-6 h-6 mr-2 text-blue-500" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-        </svg>
-        Loading dashboard…
-      </div>
-    );
-  }
-
-  const hasResumeAnalyses = analyses.length > 0;
-  const avgScore = hasResumeAnalyses ? Math.round(analyses.reduce((sum, a) => sum + a.matchScore, 0) / analyses.length) : 0;
-  const best = hasResumeAnalyses ? analyses.reduce((b, a) => (a.matchScore > b.matchScore ? a : b)) : null;
-  const allMissing = analyses.flatMap((a) => (Array.isArray(a.result?.missingSkills) ? a.result.missingSkills : []));
-  const weakTopics = [...new Set(allMissing)].slice(0, 8);
-
-  // Last 8 analyses for chart, oldest → newest
-  const chartData = [...analyses].reverse().slice(-8);
+  useEffect(() => {
+    if (!ready) return;
+    if (!user) { setLoading(false); return; }
+    load();
+  }, [ready, user, load]);
 
   const jobsSaved = jobStats?.total ?? 0;
-  const usingDemoJobStats = jobsSaved === 0;
-  const topSkills = usingDemoJobStats ? DEMO_JOB_STATS.topSkills : jobStats!.topSkills.slice(0, 8);
-  const recentRoles = usingDemoJobStats ? DEMO_JOB_STATS.recentRoles : jobStats!.recentRoles;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
-      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-500 mt-1">Track your resume performance and the jobs you are targeting.</p>
+          <p className="text-gray-500 mt-1">{user ? `Welcome back${user.name ? `, ${user.name}` : ""}. Everything here is computed from records saved to your account.` : "Sign in to see your saved resumes, analyses and applications."}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link
-            href="/dashboard/job-analyzer"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors text-sm"
-          >
-            <SearchCode className="w-4 h-4" />
-            Analyze Job Description
-          </Link>
-          <Link
-            href="/analyze"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors text-sm"
-          >
-            <PlusCircle className="w-4 h-4" />
-            New Analysis
-          </Link>
+          <Link href="/dashboard/job-analyzer" className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 text-sm"><SearchCode className="w-4 h-4" /> Job analyzer</Link>
+          <Link href="/dashboard/resume-analyzer" className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 text-sm"><PlusCircle className="w-4 h-4" /> New analysis</Link>
         </div>
       </div>
 
-      {/* ── Job description analyses (Phase 3) ─────────────────────────────── */}
-      <section className="space-y-4" aria-labelledby="job-analyses-heading">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 id="job-analyses-heading" className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <Briefcase className="w-5 h-5 text-indigo-600" /> Job Description Analyses
-          </h2>
-          <Link href="/dashboard/job-history" className="text-sm text-blue-600 hover:underline flex items-center gap-1">
-            View all <ArrowRight className="w-3 h-3" />
-          </Link>
+      {/* ── Account dashboard ─────────────────────────────────────────────── */}
+      {!ready ? (
+        <SkeletonStatRow count={5} />
+      ) : !user ? (
+        <Card>
+          <CardContent className="py-10">
+            <EmptyState icon={LogIn} compact title="Your persistent dashboard is one sign-in away" description="Resumes, AI analyses, job applications and interview practice are stored in PostgreSQL and follow you across devices." action={{ label: "Sign in or create an account", href: "/auth/login?next=/dashboard", icon: LogIn }} />
+            {demoAnalyses.length > 0 && (
+              <p className="text-center text-xs text-gray-500 mt-4">{demoAnalyses.length} demo {demoAnalyses.length === 1 ? "analysis" : "analyses"} are stored in this browser only — see <Link href="/dashboard/analysis-history" className="text-blue-600 hover:underline">Analysis History</Link>.</p>
+            )}
+          </CardContent>
+        </Card>
+      ) : error ? (
+        <div role="alert" className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-3">
+          <span>Could not load your dashboard: {error}</span>
+          <Button size="sm" variant="outline" onClick={load}>Retry</Button>
         </div>
+      ) : loading || !overview || !activity ? (
+        <>
+          <SkeletonStatRow count={5} />
+          <div className="grid gap-6 lg:grid-cols-3"><SkeletonCard lines={5} className="lg:col-span-2" /><SkeletonCard lines={5} /></div>
+        </>
+      ) : (
+        <>
+          {/* Stat cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            <StatCard icon={FileText} label="Resumes" value={overview.totals.resumes} color="blue" href="/dashboard/my-resumes" />
+            <StatCard icon={Bot} label="AI analyses" value={overview.totals.aiAnalyses} color="indigo" href="/dashboard/analysis-history" sub={overview.totals.demoAnalyses ? `+${overview.totals.demoAnalyses} demo` : undefined} />
+            <StatCard icon={TrendingUp} label="Average match" value={overview.averageMatchScore.value === null ? "—" : `${overview.averageMatchScore.value}%`} color={overview.averageMatchScore.value === null ? "gray" : overview.averageMatchScore.value >= 80 ? "green" : overview.averageMatchScore.value >= 60 ? "amber" : "red"} sub={overview.averageMatchScore.sampleSize ? `${overview.averageMatchScore.sampleSize} scored AI` : "no scored analyses"} />
+            <StatCard icon={Briefcase} label="Active applications" value={overview.totals.activeApplications} color="purple" href="/dashboard/applications" sub={`${overview.totals.applications} total`} />
+            <StatCard icon={Mic} label="Interviews practised" value={overview.totals.interviewsCompleted} color="pink" sub={overview.learningProgress ? `${overview.learningProgress.questionsPracticed} questions` : "none yet"} />
+            <StatCard icon={Bell} label="Follow-ups due" value={overview.followUps.dueSoon} color={overview.followUps.overdue ? "red" : "amber"} href="/dashboard/applications" sub={overview.followUps.overdue ? `${overview.followUps.overdue} overdue` : "next 14 days"} />
+          </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <StatCard icon={FolderSearch} label="Saved job descriptions" value={jobsSaved} color="indigo" />
-              <StatCard
-                icon={Layers}
-                label="Distinct skills requested"
-                value={usingDemoJobStats ? "—" : jobStats!.topSkills.length}
-                color="blue"
-              />
-            </div>
-
-            <Card>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Recent analyses */}
+            <Card className="lg:col-span-2">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Recent Job Analyses</CardTitle>
-                  <span className="text-xs text-gray-400">Demo · rule-based</span>
+                  <CardTitle>Recent analyses</CardTitle>
+                  <Link href="/dashboard/analysis-history" className="text-sm text-blue-600 hover:underline flex items-center gap-1">View all <ArrowRight className="w-3 h-3" /></Link>
                 </div>
               </CardHeader>
               <CardContent className="px-0 py-0">
-                {jobsSaved === 0 ? (
-                  <div className="px-6 py-8 text-center">
-                    <Briefcase className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-sm font-medium text-gray-700">No job descriptions analyzed yet</p>
-                    <p className="text-xs text-gray-500 mt-1">Paste a posting to extract its skills, requirements and keywords.</p>
-                    <Link href="/dashboard/job-analyzer" className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">
-                      <SearchCode className="w-4 h-4" /> Analyze a Job Description
-                    </Link>
-                  </div>
+                {activity.recentAnalyses.length === 0 ? (
+                  <div className="px-6 py-6"><EmptyState compact icon={Bot} title="No analyses yet" description="Run an AI analysis to see it here." action={{ label: "Run analysis", href: "/dashboard/resume-analyzer" }} /></div>
                 ) : (
-                  <JobAnalysisHistory items={jobStats!.recent} compact />
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base"><Star className="w-4 h-4 text-amber-500" /> Most Requested Skills</CardTitle>
-                <p className="text-xs text-gray-500 mt-1">
-                  {usingDemoJobStats ? "Example data — analyze a job to see real counts." : "Across your saved job analyses"}
-                </p>
-              </CardHeader>
-              <CardContent>
-                {usingDemoJobStats && (
-                  <span className="inline-block mb-2 text-[10px] uppercase tracking-wide font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Demo example</span>
-                )}
-                {topSkills.length === 0 ? (
-                  <p className="text-sm text-gray-400 italic">No technical skills detected yet.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {topSkills.map((s) => {
-                      const max = topSkills[0]?.count || 1;
-                      return (
-                        <li key={s.name} className="flex items-center gap-3 text-sm">
-                          <span className="w-28 truncate text-gray-800">{s.name}</span>
-                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${usingDemoJobStats ? "bg-gray-300" : "bg-indigo-500"}`} style={{ width: `${Math.round((s.count / max) * 100)}%` }} />
+                  <ul className="divide-y divide-gray-100">
+                    {activity.recentAnalyses.map((a) => (
+                      <li key={a.id}>
+                        <Link href={`/dashboard/resume-analysis/${a.id}`} className="flex items-center gap-4 px-6 py-3 hover:bg-gray-50">
+                          <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0", a.analysisMode === "ai" ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700")}>{a.analysisMode === "ai" ? <Bot className="w-4 h-4" /> : <FlaskConical className="w-4 h-4" />}</div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-gray-900 truncate">{a.jobTitle}{a.companyName ? ` · ${a.companyName}` : ""}</p>
+                            <p className="text-xs text-gray-400">{a.resumeName ?? a.fileName ?? "resume"} · {formatDate(a.createdAt)} · {a.skillCounts.matched} matched / {a.skillCounts.missing} missing or unverified</p>
                           </div>
-                          <span className="text-xs text-gray-500 tabular-nums w-6 text-right">{s.count}</span>
-                        </li>
-                      );
-                    })}
+                          <span className={cn("font-bold tabular-nums", getScoreColor(a.matchScore))}>{a.scoreAvailable ? `${a.matchScore}%` : "—"}</span>
+                          <Badge variant={a.analysisMode === "ai" ? "info" : "warning"}>{a.analysisMode === "ai" ? "AI" : "Demo"}</Badge>
+                        </Link>
+                      </li>
+                    ))}
                   </ul>
                 )}
               </CardContent>
             </Card>
 
+            {/* Recommended actions */}
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Recently Analyzed Roles</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Lightbulb className="w-4 h-4 text-amber-500" /> Recommended next actions</CardTitle></CardHeader>
               <CardContent>
-                {usingDemoJobStats && (
-                  <span className="inline-block mb-2 text-[10px] uppercase tracking-wide font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Demo example</span>
+                {overview.recommendedActions.length === 0 ? <p className="text-sm text-gray-400 italic">You&apos;re all caught up.</p> : (
+                  <ul className="space-y-3">
+                    {overview.recommendedActions.map((a) => (
+                      <li key={a.key}>
+                        <Link href={a.href} className="block rounded-lg border border-gray-200 px-3 py-2.5 hover:border-blue-300 hover:bg-blue-50/40">
+                          <p className="text-sm font-medium text-gray-900">{a.title}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{a.detail}</p>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
                 )}
-                <div className="flex flex-wrap gap-2">
-                  {recentRoles.map((r) => (
-                    <span key={r} className={`px-2.5 py-1 rounded-full text-xs font-medium border ${usingDemoJobStats ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-indigo-50 text-indigo-800 border-indigo-200"}`}>
-                      {r}
-                    </span>
-                  ))}
-                </div>
               </CardContent>
             </Card>
-          </div>
-        </div>
-      </section>
 
-      {/* ── Resume analyses (Phase 1 / 2) ──────────────────────────────────── */}
-      <section className="space-y-4" aria-labelledby="resume-analyses-heading">
-        <h2 id="resume-analyses-heading" className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-          <FileText className="w-5 h-5 text-blue-600" /> Resume Analyses
-        </h2>
-
-        {!hasResumeAnalyses ? (
-          <Card>
-            <CardContent className="py-14 text-center">
-              <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <BarChart3 className="w-7 h-7 text-blue-600" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900">No analyses yet</h3>
-              <p className="text-gray-500 mt-2 text-sm">Run your first resume analysis to start tracking your progress here.</p>
-              <Link
-                href="/analyze"
-                className="inline-flex items-center gap-2 mt-5 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors text-sm"
-              >
-                <PlusCircle className="w-4 h-4" />
-                Analyze a Resume
-              </Link>
-            </CardContent>
-          </Card>
-        ) : (
-          <>
-            {/* Stat cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <StatCard icon={FileText} label="Total Analyses" value={analyses.length} color="blue" />
-              <StatCard icon={TrendingUp} label="Average Score" value={`${avgScore}%`} color={avgScore >= 80 ? "green" : avgScore >= 60 ? "amber" : "red"} />
-              <StatCard icon={Target} label="Best Match" value={`${best!.matchScore}%`} color="green" />
-              <StatCard icon={BarChart3} label="Skill Gaps" value={weakTopics.length} color="orange" />
-            </div>
-
-            {/* Score trend — pure CSS bars */}
-            {chartData.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Score Trend</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-end gap-3 h-40">
-                    {chartData.map((a, i) => {
-                      const pct = a.matchScore;
-                      const color = pct >= 80 ? "bg-green-500" : pct >= 60 ? "bg-yellow-500" : "bg-red-500";
-                      return (
-                        <div key={a.id} className="flex-1 flex flex-col items-center gap-1 group">
-                          <span className="text-xs text-gray-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity">{pct}%</span>
-                          <div className={`w-full rounded-t-md ${color} transition-all duration-700`} style={{ height: `${pct}%` }} title={`${a.jobTitle}: ${pct}%`} />
-                          <span className="text-xs text-gray-400">#{i + 1}</span>
+            {/* Recent applications */}
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Recent applications</CardTitle>
+                  <Link href="/dashboard/applications" className="text-sm text-blue-600 hover:underline flex items-center gap-1">Tracker <ArrowRight className="w-3 h-3" /></Link>
+                </div>
+              </CardHeader>
+              <CardContent className="px-0 py-0">
+                {activity.recentApplications.length === 0 ? (
+                  <div className="px-6 py-6"><EmptyState compact icon={Briefcase} title="No applications tracked" description="Add the jobs you're pursuing to track status and follow-ups." action={{ label: "Add application", href: "/dashboard/applications" }} /></div>
+                ) : (
+                  <ul className="divide-y divide-gray-100">
+                    {activity.recentApplications.map((a) => (
+                      <li key={a.id} className="flex items-center gap-4 px-6 py-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-gray-900 truncate">{a.companyName} · <span className="text-gray-600 font-normal">{a.jobTitle}</span></p>
+                          <p className="text-xs text-gray-400">applied {formatDate(a.applicationDate)}{a.matchScore !== null && <> · <span className={getScoreColor(a.matchScore)}>{a.matchScore}% match</span></>}</p>
                         </div>
-                      );
-                    })}
-                  </div>
-                  <div className="flex gap-4 mt-3 flex-wrap">
-                    {[
-                      { color: "bg-green-500", label: "Strong (≥80%)" },
-                      { color: "bg-yellow-500", label: "Moderate (60–79%)" },
-                      { color: "bg-red-500", label: "Weak (<60%)" },
-                    ].map((l) => (
-                      <div key={l.label} className="flex items-center gap-1.5 text-xs text-gray-500">
-                        <span className={`w-2.5 h-2.5 rounded-sm ${l.color}`} />
-                        {l.label}
-                      </div>
+                        <span className={cn("text-xs font-medium rounded-full border px-2 py-0.5", STATUS_STYLES[a.status])}>{STATUS_LABELS[a.status]}</span>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Follow-ups + skill gaps */}
+            <div className="space-y-6">
+              <Card>
+                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Bell className="w-4 h-4 text-amber-500" /> Upcoming follow-ups</CardTitle></CardHeader>
+                <CardContent>
+                  {activity.upcomingFollowUps.length === 0 ? <p className="text-sm text-gray-400 italic">No follow-ups scheduled.</p> : (
+                    <ul className="space-y-2">
+                      {activity.upcomingFollowUps.map((f) => (
+                        <li key={f.id} className="flex items-center justify-between gap-2 text-sm">
+                          <span className="truncate text-gray-800">{f.companyName} · <span className="text-gray-500">{f.jobTitle}</span></span>
+                          <span className={cn("text-xs whitespace-nowrap", f.overdue ? "text-red-600 font-semibold" : "text-gray-500")}>{formatDate(f.nextFollowUpDate)}{f.overdue && " · overdue"}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </CardContent>
               </Card>
-            )}
-
-            {/* Recent analyses + skill gaps */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2">
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle>Recent Analyses</CardTitle>
-                      <Link href="/history" className="text-sm text-blue-600 hover:underline flex items-center gap-1">
-                        View all <ArrowRight className="w-3 h-3" />
-                      </Link>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="divide-y divide-gray-100 px-0">
-                    {analyses.slice(0, 5).map((a) => (
-                      <div key={a.id} className="flex items-center gap-4 px-6 py-3">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-gray-900 truncate">{a.jobTitle}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            {a.resume?.fileName} · {formatDate(a.createdAt)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <ProgressBar
-                            value={a.matchScore}
-                            className="w-24"
-                            barClassName={a.matchScore >= 80 ? "bg-green-500" : a.matchScore >= 60 ? "bg-yellow-500" : "bg-red-500"}
-                          />
-                          <span className={`text-sm font-semibold tabular-nums w-10 text-right ${getScoreColor(a.matchScore)}`}>{a.matchScore}%</span>
-                          <Badge variant={a.matchScore >= 80 ? "success" : a.matchScore >= 60 ? "warning" : "error"}>{getScoreLabel(a.matchScore)}</Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </div>
-
               <Card>
                 <CardHeader>
-                  <CardTitle>Top Skill Gaps</CardTitle>
-                  <p className="text-xs text-gray-500 mt-1">Missing across all analyses</p>
+                  <CardTitle className="text-base">Frequent skill gaps</CardTitle>
+                  <p className="text-xs text-gray-500 mt-1">Missing or unverified across your AI analyses</p>
                 </CardHeader>
                 <CardContent>
-                  {weakTopics.length === 0 ? (
-                    <p className="text-sm text-gray-400 italic">No gaps detected.</p>
-                  ) : (
+                  {overview.skillGaps.length === 0 ? <p className="text-sm text-gray-400 italic">No gaps recorded yet.</p> : (
                     <div className="flex flex-wrap gap-2">
-                      {weakTopics.map((skill) => (
-                        <span key={skill} className="px-2.5 py-1 bg-red-50 text-red-800 border border-red-200 rounded-full text-xs font-medium">
-                          {skill}
-                        </span>
-                      ))}
+                      {overview.skillGaps.map((g) => <span key={g.name} className="px-2.5 py-1 bg-red-50 text-red-800 border border-red-200 rounded-full text-xs font-medium" title={`${g.count} analyses · ${g.required} as required`}>{g.name} <span className="text-red-400">×{g.count}</span></span>)}
                     </div>
                   )}
                 </CardContent>
               </Card>
             </div>
-          </>
-        )}
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-sm">
+            <Link href="/dashboard/my-resumes" className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50"><Upload className="w-4 h-4" /> Manage resumes</Link>
+            <Link href="/dashboard/job-descriptions" className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50"><BookOpen className="w-4 h-4" /> Saved job descriptions ({overview.totals.jobDescriptions})</Link>
+            <Link href="/dashboard/analytics" className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50"><LineChart className="w-4 h-4" /> Career analytics</Link>
+          </div>
+        </>
+      )}
+
+      {/* ── Local job description analyses (Phase 3, browser only) ─────────── */}
+      <section className="space-y-4" aria-labelledby="job-analyses-heading">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 id="job-analyses-heading" className="text-lg font-semibold text-gray-900 flex items-center gap-2"><FolderSearch className="w-5 h-5 text-indigo-600" /> Rule-based job analyses <span className="text-xs font-normal text-gray-400">(demo · stored in this browser)</span></h2>
+          <Link href="/dashboard/job-history" className="text-sm text-blue-600 hover:underline flex items-center gap-1">View all <ArrowRight className="w-3 h-3" /></Link>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Card className="lg:col-span-2">
+            <CardContent className="px-0 py-0">
+              {jobsSaved === 0 ? (
+                <div className="px-6 py-6"><EmptyState compact icon={Briefcase} title="No job descriptions analysed locally" description="The rule-based job analyzer extracts skills and requirements without AI." action={{ label: "Analyze a job description", href: "/dashboard/job-analyzer" }} /></div>
+              ) : (
+                <JobAnalysisHistory items={jobStats!.recent} compact />
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Star className="w-4 h-4 text-amber-500" /> Most requested skills</CardTitle></CardHeader>
+            <CardContent>
+              {jobsSaved === 0 || !jobStats || jobStats.topSkills.length === 0 ? <p className="text-sm text-gray-400 italic">Analyze a job description to see counts.</p> : (
+                <ul className="space-y-2">
+                  {jobStats.topSkills.slice(0, 8).map((s) => (
+                    <li key={s.name} className="flex items-center gap-3 text-sm">
+                      <span className="w-28 truncate text-gray-800">{s.name}</span>
+                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.round((s.count / (jobStats.topSkills[0]?.count || 1)) * 100)}%` }} /></div>
+                      <span className="text-xs text-gray-500 tabular-nums w-6 text-right">{s.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </section>
+      <span className="hidden"><BarChart3 /><Target /><Layers /></span>
     </div>
   );
 }
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  color,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string | number;
-  color: string;
-}) {
+function StatCard({ icon: Icon, label, value, color, sub, href }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string | number; color: string; sub?: string; href?: string }) {
   const colors: Record<string, string> = {
-    blue: "bg-blue-100 text-blue-700",
-    green: "bg-green-100 text-green-700",
-    amber: "bg-amber-100 text-amber-700",
-    red: "bg-red-100 text-red-700",
-    orange: "bg-orange-100 text-orange-700",
-    indigo: "bg-indigo-100 text-indigo-700",
+    blue: "bg-blue-100 text-blue-700", green: "bg-green-100 text-green-700", amber: "bg-amber-100 text-amber-700", red: "bg-red-100 text-red-700",
+    indigo: "bg-indigo-100 text-indigo-700", purple: "bg-purple-100 text-purple-700", pink: "bg-pink-100 text-pink-700", gray: "bg-gray-100 text-gray-600",
   };
-
-  return (
-    <Card>
-      <CardContent className="py-5">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${colors[color] ?? colors.blue}`}>
-          <Icon className="w-5 h-5" />
-        </div>
-        <div className="text-2xl font-bold text-gray-900">{value}</div>
-        <div className="text-sm text-gray-500 mt-0.5">{label}</div>
-      </CardContent>
-    </Card>
+  const body = (
+    <CardContent className="py-5">
+      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mb-3", colors[color] ?? colors.blue)}><Icon className="w-5 h-5" /></div>
+      <div className="text-2xl font-bold text-gray-900">{value}</div>
+      <div className="text-sm text-gray-500 mt-0.5">{label}</div>
+      {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
+    </CardContent>
   );
+  return href ? <Link href={href}><Card hover>{body}</Card></Link> : <Card>{body}</Card>;
 }

@@ -97,18 +97,18 @@ export default function ResumeAnalysisPage() {
       flash("error", "The resume text was not stored for this analysis, so it cannot be regenerated. Run a new analysis instead.");
       return;
     }
-    if (!confirm("Regenerate this analysis? The current result will be replaced.")) return;
+    if (!confirm("Run this analysis again? A new history record will be created and the current result kept.")) return;
     setRegenerating(true);
     try {
       const record = await regenerateAiAnalysis(result.id);
-      setResult(toAnalysisViewFromAi(record));
-      flash("ok", "Analysis regenerated.");
+      flash("ok", "New analysis created - opening it.");
+      router.push(`/dashboard/resume-analysis/${record.id}`);
     } catch (err) {
       flash("error", toApiClientError(err).message);
     } finally {
       setRegenerating(false);
     }
-  }, [result]);
+  }, [result, router]);
 
   // ── Export ────────────────────────────────────────────────────────────────
   const handleExport = useCallback(() => {

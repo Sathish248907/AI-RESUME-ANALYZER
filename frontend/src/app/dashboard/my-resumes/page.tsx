@@ -1,266 +1,382 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { getAnalysisMetas, deleteAnalysis, clearAllAnalyses } from "@/services/analysisStorage";
-import { deleteAiAnalysis, listAiAnalyses } from "@/services/resumeAnalysisService";
-import { useAuth } from "@/services/authService";
-import { toApiClientError } from "@/services/api";
-import { formatDate, getScoreColor, getScoreLabel } from "@/lib/utils";
-import { Badge } from "@/components/common/Badge";
+import { useRouter } from "next/navigation";
+import { FileText, Upload, Search, Pencil, Trash2, Download, Sparkles, History, Check, X, LogIn, FlaskConical, Briefcase } from "lucide-react";
 import { Card, CardContent } from "@/components/common/Card";
 import Button from "@/components/common/Button";
-import { ProgressBar } from "@/components/common/ProgressBar";
-import { History, PlusCircle, Trash2, Eye, FileText, Calendar, Briefcase, TrendingUp, Target, AlertTriangle, Bot, FlaskConical, LogIn, RefreshCw } from "lucide-react";
+import { Badge } from "@/components/common/Badge";
+import Modal from "@/components/common/Modal";
+import ConfirmDialog from "@/components/common/ConfirmDialog";
+import EmptyState from "@/components/common/EmptyState";
+import { SkeletonList } from "@/components/common/Skeleton";
+import { useToast } from "@/components/common/Toast";
+import { TARGET_ROLES } from "@/components/analyzer/JobDescriptionForm";
+import { useAuth } from "@/hooks/useAuth";
+import { toApiClientError } from "@/services/api";
+import { deleteResume, downloadResume, getResume, listResumes, updateResume, uploadResume, type ResumeDetail, type ResumeListItem, type ResumeSort } from "@/services/resumeService";
+import type { AnalysisHistoryItem } from "@/services/analysisHistoryService";
+import { getAnalysisMetas } from "@/services/analysisStorage";
+import { formatFileSize, getFileTypeLabel, validateFile } from "@/services/resumeParser";
+import { formatDate, getScoreColor } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
-interface HistoryItem {
-  id: string;
-  mode: "ai" | "demo";
-  jobTitle: string;
-  targetRole: string;
-  companyName?: string | null;
-  fileName: string;
-  matchScore: number;
-  createdAt: string;
-  provider?: string | null;
-}
-
-type Filter = "all" | "ai" | "demo";
-
 export default function MyResumesPage() {
-  const { user, ready: authReady } = useAuth();
-  const [demoItems, setDemoItems] = useState<HistoryItem[]>([]);
-  const [aiItems, setAiItems] = useState<HistoryItem[]>([]);
-  const [aiError, setAiError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [filter, setFilter] = useState<Filter>("all");
+  const router = useRouter();
+  const toast = useToast();
+  const { user, ready } = useAuth();
 
-  const reloadDemo = useCallback(() => {
-    setDemoItems(
-      getAnalysisMetas().map((m) => ({ id: m.id, mode: "demo", jobTitle: m.jobTitle, targetRole: m.targetRole, fileName: m.fileName, matchScore: m.matchScore, createdAt: m.createdAt }))
-    );
-    setLoaded(true);
-  }, []);
+  const [items, setItems] = useState<ResumeListItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [role, setRole] = useState("");
+  const [sort, setSort] = useState<ResumeSort>("newest");
 
-  const reloadAi = useCallback(async () => {
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [uploadName, setUploadName] = useState("");
+  const [uploadRole, setUploadRole] = useState("");
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const [renaming, setRenaming] = useState<ResumeListItem | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameRole, setRenameRole] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const [deleting, setDeleting] = useState<ResumeListItem | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  const [detail, setDetail] = useState<{ resume: ResumeDetail; analyses: AnalysisHistoryItem[] } | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const demoCount = useMemo(() => (typeof window === "undefined" ? 0 : getAnalysisMetas().length), []);
+
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await listResumes({ q: q || undefined, targetRole: role || undefined, sort, limit: 50 });
+      setItems(data.resumes);
+      setTotal(data.total);
+    } catch (err) {
+      setError(toApiClientError(err).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, q, role, sort]);
+
+  useEffect(() => {
+    if (!ready) return;
     if (!user) {
-      setAiItems([]);
+      setLoading(false);
       return;
     }
-    setAiLoading(true);
-    setAiError(null);
-    try {
-      const list = await listAiAnalyses();
-      setAiItems(
-        list.map((a) => ({ id: a.id, mode: "ai", jobTitle: a.jobTitle, targetRole: a.targetRole, companyName: a.companyName, fileName: a.fileName ?? "resume", matchScore: a.matchScore, createdAt: a.createdAt, provider: a.provider }))
-      );
-    } catch (err) {
-      setAiError(toApiClientError(err).message);
-    } finally {
-      setAiLoading(false);
+    const t = setTimeout(load, q ? 250 : 0);
+    return () => clearTimeout(t);
+  }, [ready, user, load, q]);
+
+  // ── Upload ──────────────────────────────────────────────────────────────
+  function pickFile(f: File | null) {
+    setUploadError(null);
+    if (!f) return setFile(null);
+    const err = validateFile(f);
+    if (err) {
+      setUploadError(err.message);
+      setFile(null);
+      return;
     }
-  }, [user]);
+    setFile(f);
+    if (!uploadName) setUploadName(f.name.replace(/\.(pdf|docx|doc)$/i, ""));
+  }
 
-  useEffect(() => { reloadDemo(); }, [reloadDemo]);
-  useEffect(() => { if (authReady) reloadAi(); }, [authReady, reloadAi]);
-
-  const handleDelete = useCallback(async (item: HistoryItem) => {
-    if (!confirm(`Delete this ${item.mode === "ai" ? "AI" : "demo"} analysis?`)) return;
-    setDeleting(item.id);
+  async function handleUpload() {
+    if (!file) return setUploadError("Choose a PDF or DOCX file.");
+    setUploading(true);
+    setUploadError(null);
     try {
-      if (item.mode === "ai") {
-        await deleteAiAnalysis(item.id);
-        setAiItems((prev) => prev.filter((a) => a.id !== item.id));
-      } else {
-        deleteAnalysis(item.id);
-        reloadDemo();
-      }
+      await uploadResume(file, { name: uploadName.trim() || undefined, targetRole: uploadRole || undefined });
+      toast.success("Resume uploaded and stored to your account.");
+      setUploadOpen(false);
+      setFile(null);
+      setUploadName("");
+      setUploadRole("");
+      await load();
     } catch (err) {
-      alert(toApiClientError(err).message);
+      setUploadError(toApiClientError(err).message);
     } finally {
+      setUploading(false);
+    }
+  }
+
+  // ── Rename ──────────────────────────────────────────────────────────────
+  async function handleRename() {
+    if (!renaming) return;
+    if (!renameValue.trim()) return;
+    setSaving(true);
+    try {
+      await updateResume(renaming.id, { name: renameValue.trim(), targetRole: renameRole || null });
+      toast.success("Resume updated.");
+      setRenaming(null);
+      await load();
+    } catch (err) {
+      toast.error(toApiClientError(err).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Delete ──────────────────────────────────────────────────────────────
+  async function handleDelete() {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    try {
+      await deleteResume(deleting.id);
+      toast.success(`Deleted "${deleting.name}". Its analyses were kept in your history.`);
       setDeleting(null);
+      if (detail?.resume.id === deleting.id) setDetail(null);
+      await load();
+    } catch (err) {
+      toast.error(toApiClientError(err).message);
+    } finally {
+      setDeleteBusy(false);
     }
-  }, [reloadDemo]);
+  }
 
-  const handleClearDemo = useCallback(() => {
-    if (!confirm("Delete ALL demo analyses saved in this browser? This cannot be undone.")) return;
-    clearAllAnalyses();
-    reloadDemo();
-  }, [reloadDemo]);
+  async function openDetail(id: string) {
+    setDetailLoading(true);
+    try {
+      setDetail(await getResume(id));
+    } catch (err) {
+      toast.error(toApiClientError(err).message);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
 
-  if (!loaded) {
+  async function handleDownload(r: ResumeListItem) {
+    try {
+      await downloadResume(r.id, r.originalFileName);
+    } catch (err) {
+      toast.error(toApiClientError(err).message);
+    }
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────
+  if (!ready) return <div className="max-w-5xl mx-auto px-4 py-10"><SkeletonList rows={3} /></div>;
+
+  if (!user) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <svg className="animate-spin w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-        </svg>
+      <div className="max-w-2xl mx-auto px-4 py-16 space-y-6">
+        <EmptyState
+          icon={LogIn}
+          title="Sign in to manage your resumes"
+          description="Stored resumes live in your account so you can re-analyse them against different jobs, from any device."
+          action={{ label: "Sign in", href: "/auth/login?next=/dashboard/my-resumes", icon: LogIn }}
+        />
+        {demoCount > 0 && (
+          <p className="text-center text-sm text-gray-500">
+            You have {demoCount} demo {demoCount === 1 ? "analysis" : "analyses"} in this browser — see{" "}
+            <Link href="/dashboard/analysis-history" className="text-blue-600 hover:underline">Analysis History</Link>.
+          </p>
+        )}
       </div>
     );
   }
-
-  const all = [...aiItems, ...demoItems].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  const analyses = filter === "all" ? all : all.filter((a) => a.mode === filter);
-
-  if (all.length === 0 && !aiLoading) {
-    return (
-      <div className="max-w-lg mx-auto px-4 py-24 text-center">
-        <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
-          <History className="w-8 h-8 text-gray-400" />
-        </div>
-        <h2 className="text-2xl font-bold text-gray-900">No analyses yet</h2>
-        <p className="text-gray-500 mt-3 text-sm leading-relaxed">
-          Run a resume analysis to see your results here. AI analyses are saved to your account; demo analyses stay in this browser.
-        </p>
-        {aiError && <p className="text-xs text-red-600 mt-3">{aiError}</p>}
-        <Link href="/dashboard/resume-analyzer" className="inline-flex items-center gap-2 mt-6 px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors">
-          <PlusCircle className="w-4 h-4" /> Analyze a Resume
-        </Link>
-      </div>
-    );
-  }
-
-  const scored = all.filter((a) => a.matchScore > 0);
-  const avgScore = scored.length ? Math.round(scored.reduce((s, a) => s + a.matchScore, 0) / scored.length) : 0;
-  const best = scored.length ? scored.reduce((b, a) => (a.matchScore > b.matchScore ? a : b)) : null;
-  const latest = all[0];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Resume History</h1>
-          <p className="text-gray-500 mt-1">
-            {aiItems.length} AI {aiItems.length === 1 ? "analysis" : "analyses"} · {demoItems.length} demo {demoItems.length === 1 ? "analysis" : "analyses"}
-          </p>
+          <h1 className="text-3xl font-bold text-gray-900">My Resumes</h1>
+          <p className="text-gray-500 mt-1">{total} stored {total === 1 ? "resume" : "resumes"} · saved to your account</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Link href="/dashboard/resume-analyzer" className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors text-sm">
-            <PlusCircle className="w-4 h-4" /> New Analysis
+        <div className="flex gap-2">
+          <Link href="/dashboard/analysis-history" className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50">
+            <History className="w-4 h-4" /> Analysis history
           </Link>
-          {demoItems.length > 0 && (
-            <Button variant="outline" size="sm" onClick={handleClearDemo} className="text-red-500 hover:text-red-700 hover:border-red-300">
-              <Trash2 className="w-3.5 h-3.5" /> Clear demo
-            </Button>
-          )}
+          <Button onClick={() => setUploadOpen(true)}><Upload className="w-4 h-4" /> Upload resume</Button>
         </div>
       </div>
 
-      {!user && authReady && (
-        <div className="flex items-start gap-3 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 text-sm text-indigo-900">
-          <LogIn className="w-4 h-4 mt-0.5 flex-shrink-0 text-indigo-500" />
-          <span>
-            <Link href="/auth/login?next=/dashboard/my-resumes" className="font-medium text-blue-600 hover:underline">Sign in</Link> to see AI analyses saved to your account. Demo analyses below are stored in this browser only.
-          </span>
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or file…" aria-label="Search resumes" className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <select value={role} onChange={(e) => setRole(e.target.value)} aria-label="Filter by target role" className="text-sm px-3 py-2.5 border border-gray-300 rounded-lg bg-white">
+          <option value="">All target roles</option>
+          {TARGET_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <select value={sort} onChange={(e) => setSort(e.target.value as ResumeSort)} aria-label="Sort" className="text-sm px-3 py-2.5 border border-gray-300 rounded-lg bg-white">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="name">Name A–Z</option>
+          <option value="role">Target role</option>
+        </select>
+      </div>
+
+      {error && (
+        <div role="alert" className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-3">
+          <span>{error}</span>
+          <Button size="sm" variant="outline" onClick={load}>Retry</Button>
         </div>
       )}
-      {aiError && (
-        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
-          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-          <span>Could not load AI analyses: {aiError} <button type="button" onClick={reloadAi} className="underline ml-1">Retry</button></span>
+
+      {loading ? (
+        <SkeletonList rows={3} />
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={FileText}
+          title={q || role ? "No resumes match" : "No resumes yet"}
+          description={q || role ? "Try a different search or clear the filters." : "Upload a PDF or DOCX. We extract the text so you can analyse it against any job description."}
+          action={q || role ? { label: "Clear filters", onClick: () => { setQ(""); setRole(""); } } : { label: "Upload your first resume", onClick: () => setUploadOpen(true), icon: Upload }}
+        />
+      ) : (
+        <div className="space-y-3">
+          {items.map((r) => (
+            <Card key={r.id} hover>
+              <CardContent className="py-4">
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0"><FileText className="w-5 h-5" /></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button type="button" onClick={() => openDetail(r.id)} className="font-semibold text-gray-900 hover:text-blue-700 truncate text-left">{r.name}</button>
+                      <Badge variant="neutral">{getFileTypeLabel(r.fileType)}</Badge>
+                      {r.targetRole && <Badge variant="info">{r.targetRole}</Badge>}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">
+                      {r.originalFileName} · {formatFileSize(r.fileSize)} · {r.charCount.toLocaleString()} chars · uploaded {formatDate(r.createdAt)}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    {r.latestAnalysis ? (
+                      <Link href={`/dashboard/resume-analysis/${r.latestAnalysis.id}`} className="block">
+                        <span className={cn("text-xl font-bold tabular-nums", getScoreColor(r.latestAnalysis.matchScore))}>{r.latestAnalysis.matchScore}%</span>
+                        <span className="block text-[11px] text-gray-400">latest of {r.analysisCount} · {r.latestAnalysis.analysisMode === "ai" ? "AI" : "demo"}</span>
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">No analyses yet</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <Button size="sm" onClick={() => router.push(`/dashboard/resume-analyzer?resumeId=${r.id}`)} title="Analyze against a job"><Sparkles className="w-4 h-4" /> Analyze</Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setRenaming(r); setRenameValue(r.name); setRenameRole(r.targetRole ?? ""); }} aria-label="Rename"><Pencil className="w-4 h-4" /></Button>
+                    {r.hasStoredFile && <Button size="sm" variant="ghost" onClick={() => handleDownload(r)} aria-label="Download original"><Download className="w-4 h-4" /></Button>}
+                    <Button size="sm" variant="ghost" onClick={() => setDeleting(r)} aria-label="Delete" className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
-      {aiLoading && <p className="text-xs text-gray-400 flex items-center gap-1.5"><RefreshCw className="w-3 h-3 animate-spin" /> Loading AI analyses…</p>}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard icon={FileText} label="Total" value={all.length} color="blue" />
-        <StatCard icon={TrendingUp} label="Average" value={scored.length ? `${avgScore}%` : "—"} color={avgScore >= 80 ? "green" : avgScore >= 60 ? "amber" : "red"} />
-        <StatCard icon={Target} label="Best" value={best ? `${best.matchScore}%` : "—"} color="green" />
-        <StatCard icon={Calendar} label="Latest" value={latest ? formatDate(latest.createdAt) : "—"} color="indigo" small />
-      </div>
-
-      <div className="flex gap-1.5">
-        {(["all", "ai", "demo"] as Filter[]).map((f) => (
-          <button key={f} type="button" onClick={() => setFilter(f)} className={cn("px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize", filter === f ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400")}>
-            {f === "all" ? `All (${all.length})` : f === "ai" ? `AI (${aiItems.length})` : `Demo (${demoItems.length})`}
-          </button>
-        ))}
-      </div>
-
-      <div className="space-y-3">
-        {analyses.length === 0 && <p className="text-sm text-gray-400 italic">No analyses in this filter.</p>}
-        {analyses.map((analysis) => (
-          <Card key={analysis.id} hover>
-            <CardContent className="py-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0", analysis.mode === "ai" ? "bg-indigo-50" : "bg-amber-50")}>
-                  {analysis.mode === "ai" ? <Bot className="w-5 h-5 text-indigo-600" /> : <FlaskConical className="w-5 h-5 text-amber-600" />}
-                </div>
-
-                <div className="flex-1 min-w-0 space-y-0.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <p className="font-semibold text-gray-900 truncate">{analysis.jobTitle}</p>
-                    <span className={cn("text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded flex-shrink-0", analysis.mode === "ai" ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700")}>
-                      {analysis.mode === "ai" ? "AI" : "Demo"}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400">
-                    <span className="flex items-center gap-1"><Briefcase className="w-3 h-3" />{analysis.targetRole}</span>
-                    {analysis.companyName && <span>{analysis.companyName}</span>}
-                    <span className="flex items-center gap-1"><FileText className="w-3 h-3" />{analysis.fileName}</span>
-                    <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{formatDate(analysis.createdAt)}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  <div className="hidden sm:block w-24">
-                    <ProgressBar value={analysis.matchScore} barClassName={cn(analysis.matchScore >= 80 ? "bg-green-500" : analysis.matchScore >= 60 ? "bg-yellow-500" : "bg-red-500")} />
-                  </div>
-                  <span className={`text-lg font-bold tabular-nums w-12 text-right ${getScoreColor(analysis.matchScore)}`}>{analysis.matchScore}%</span>
-                  <Badge variant={analysis.matchScore >= 80 ? "success" : analysis.matchScore >= 60 ? "warning" : "error"} className="hidden sm:inline-flex">
-                    {getScoreLabel(analysis.matchScore)}
-                  </Badge>
-                </div>
-
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <Link href={`/dashboard/resume-analysis/${analysis.id}`} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
-                    <Eye className="w-3.5 h-3.5" /> View
-                  </Link>
-                  <Button variant="ghost" size="sm" loading={deleting === analysis.id} onClick={() => handleDelete(analysis)} className="text-red-400 hover:text-red-600 hover:bg-red-50" aria-label="Delete">
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <p className="text-xs text-gray-400 flex items-start gap-1.5">
-        <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-        Demo analyses are illustrative samples stored in localStorage. AI analyses are stored on the server under your account; resume text is not retained by default.
+      <p className="text-xs text-gray-400">
+        The extracted text is kept so resumes can be re-analysed; it is only ever shown to you. Original files are {items.some((i) => i.hasStoredFile) ? "retained by this server" : "not retained by this server (storage driver: none)"}.
       </p>
 
-      <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
-        <Link href="/dashboard/resume-analyzer" className="flex-1 flex items-center justify-center gap-2 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors text-sm">
-          <Bot className="w-4 h-4" /> Run AI Analysis
-        </Link>
-        <Link href="/dashboard" className="flex-1 flex items-center justify-center gap-2 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors text-sm">
-          <TrendingUp className="w-4 h-4" /> View Dashboard
-        </Link>
-      </div>
-    </div>
-  );
-}
+      {/* Upload modal */}
+      <Modal
+        open={uploadOpen}
+        onClose={() => !uploading && setUploadOpen(false)}
+        title="Upload a resume"
+        description="PDF or DOCX, up to 5 MB. Text is extracted on the server."
+        footer={<><Button variant="outline" onClick={() => setUploadOpen(false)} disabled={uploading}>Cancel</Button><Button onClick={handleUpload} loading={uploading} disabled={!file}>Upload</Button></>}
+      >
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={() => fileInput.current?.click()}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); pickFile(e.dataTransfer.files?.[0] ?? null); }}
+            className={cn("w-full border-2 border-dashed rounded-xl p-6 text-center transition-colors", file ? "border-green-300 bg-green-50" : "border-gray-300 hover:border-blue-400 bg-gray-50")}
+          >
+            <Upload className={cn("w-6 h-6 mx-auto mb-2", file ? "text-green-600" : "text-gray-400")} />
+            {file ? <p className="text-sm font-medium text-gray-900">{file.name} <span className="text-gray-500">({formatFileSize(file.size)})</span></p> : <p className="text-sm text-gray-600">Drop a file here or <span className="text-blue-600 font-medium">browse</span></p>}
+          </button>
+          <input ref={fileInput} type="file" accept=".pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="text-sm text-gray-700">Display name
+              <input value={uploadName} onChange={(e) => setUploadName(e.target.value)} maxLength={120} placeholder="e.g. Frontend CV 2026" className="mt-1 w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </label>
+            <label className="text-sm text-gray-700">Target role <span className="text-gray-400 font-normal">(optional)</span>
+              <select value={uploadRole} onChange={(e) => setUploadRole(e.target.value)} className="mt-1 w-full text-sm px-3 py-2 border border-gray-300 rounded-lg">
+                <option value="">Not set</option>
+                {TARGET_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </label>
+          </div>
+          {uploadError && <p role="alert" className="text-sm text-red-600">{uploadError}</p>}
+        </div>
+      </Modal>
 
-function StatCard({ icon: Icon, label, value, color, small = false }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string | number; color: string; small?: boolean }) {
-  const colors: Record<string, string> = {
-    blue: "bg-blue-100 text-blue-700",
-    green: "bg-green-100 text-green-700",
-    amber: "bg-amber-100 text-amber-700",
-    red: "bg-red-100 text-red-700",
-    indigo: "bg-indigo-100 text-indigo-700",
-  };
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-      <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center mb-2.5", colors[color] ?? colors.blue)}>
-        <Icon className="w-4 h-4" />
-      </div>
-      <div className={cn("font-bold text-gray-900 leading-tight", small ? "text-base" : "text-2xl")}>{value}</div>
-      <div className="text-xs text-gray-500 mt-0.5">{label}</div>
+      {/* Rename modal */}
+      <Modal open={Boolean(renaming)} onClose={() => setRenaming(null)} title="Edit resume" size="sm" footer={<><Button variant="outline" onClick={() => setRenaming(null)}>Cancel</Button><Button onClick={handleRename} loading={saving} disabled={!renameValue.trim()}><Check className="w-4 h-4" /> Save</Button></>}>
+        <div className="space-y-3">
+          <label className="text-sm text-gray-700 block">Name
+            <input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)} maxLength={120} className="mt-1 w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </label>
+          <label className="text-sm text-gray-700 block">Target role
+            <select value={renameRole} onChange={(e) => setRenameRole(e.target.value)} className="mt-1 w-full text-sm px-3 py-2 border border-gray-300 rounded-lg">
+              <option value="">Not set</option>
+              {TARGET_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </label>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        title="Delete resume?"
+        message={`"${deleting?.name}" will be removed from your account${deleting?.hasStoredFile ? " and its stored file deleted" : ""}. Analyses already run with it stay in your history but can no longer be regenerated.`}
+        confirmLabel="Delete"
+        busy={deleteBusy}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleting(null)}
+      />
+
+      {/* Detail drawer */}
+      <Modal open={Boolean(detail) || detailLoading} onClose={() => setDetail(null)} title={detail?.resume.name ?? "Loading…"} size="lg" description={detail ? `${detail.resume.originalFileName} · ${formatFileSize(detail.resume.fileSize)} · ${detail.resume.charCount.toLocaleString()} characters` : undefined}>
+        {detailLoading || !detail ? <SkeletonList rows={2} /> : (
+          <div className="space-y-5">
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Text preview</p>
+              <pre className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-3 whitespace-pre-wrap max-h-40 overflow-y-auto">{detail.resume.textPreview}{detail.resume.charCount > 600 ? "…" : ""}</pre>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Analysis history ({detail.analyses.length})</p>
+                <Button size="sm" onClick={() => router.push(`/dashboard/resume-analyzer?resumeId=${detail.resume.id}`)}><Sparkles className="w-3.5 h-3.5" /> New analysis</Button>
+              </div>
+              {detail.analyses.length === 0 ? (
+                <p className="text-sm text-gray-400 italic">This resume has not been analysed yet.</p>
+              ) : (
+                <ul className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
+                  {detail.analyses.map((a) => (
+                    <li key={a.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                      {a.analysisMode === "ai" ? <Briefcase className="w-4 h-4 text-indigo-500" /> : <FlaskConical className="w-4 h-4 text-amber-500" />}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{a.jobTitle}{a.companyName ? ` · ${a.companyName}` : ""}</p>
+                        <p className="text-xs text-gray-400">{formatDate(a.createdAt)} · {a.skillCounts.matched} matched / {a.skillCounts.missing} missing or unverified</p>
+                      </div>
+                      <span className={cn("font-bold tabular-nums", getScoreColor(a.matchScore))}>{a.scoreAvailable ? `${a.matchScore}%` : "—"}</span>
+                      <Link href={`/dashboard/resume-analysis/${a.id}`} className="text-blue-600 hover:underline text-xs">View</Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+      <span className="hidden"><X /></span>
     </div>
   );
 }

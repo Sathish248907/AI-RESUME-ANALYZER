@@ -54,6 +54,7 @@ export function createAnalysisRepository(prisma) {
           // When a Resume row is linked, its text is the source of truth; don't duplicate it.
           resumeText: storeResumeText && !resumeId ? input.resumeText : null,
         },
+        include: { resume: { select: { id: true, name: true, extractedText: true } }, jobDescriptionRef: { select: { id: true, jobTitle: true, companyName: true } } },
       });
     },
 

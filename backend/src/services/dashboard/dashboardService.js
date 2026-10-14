@@ -16,12 +16,16 @@ export function startOfDay(d) {
   return x;
 }
 
-/** Monday-based week start, as YYYY-MM-DD. */
+function localDateKey(x) {
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+}
+
+/** Monday-based week start, as YYYY-MM-DD (local calendar, timezone-safe). */
 export function weekKey(d) {
   const x = startOfDay(d);
   const day = (x.getDay() + 6) % 7;
   x.setDate(x.getDate() - day);
-  return x.toISOString().slice(0, 10);
+  return localDateKey(x);
 }
 
 export function monthKey(d) {
