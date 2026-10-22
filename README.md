@@ -237,3 +237,7 @@ See [docs/phase5.md](docs/phase5.md) for the schema changes, migration commands,
 ## Phase 6 — AI mock interviews & answer evaluation
 
 See [docs/phase6.md](docs/phase6.md) for the interview models, versioned scoring rubric, report aggregation method, endpoints and limitations.
+
+## Phase 7 — Personalized learning roadmap & skill gap tracking
+
+See [docs/phase7.md](docs/phase7.md) for the skill-gap scoring method, roadmap generation/validation pipeline, progress derivation, `/api/learning/*` endpoints, pages, tests and limitations.

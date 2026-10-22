@@ -24,6 +24,11 @@ model User {
   jobDescriptions   JobDescription[]
   applications      JobApplication[]
   interviewSessions InterviewSession[]
+  roadmaps          LearningRoadmap[]
+  skillGaps         SkillGap[]
+  dismissals        RecommendationDismissal[]
+  resumeVersions    ResumeVersion[]
+  templatePreference ResumeTemplatePreference?
 
   @@map("api_users")
 }
@@ -49,6 +54,7 @@ model Resume {
   user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   analyses     Analysis[]
   applications JobApplication[]
+  versions     ResumeVersion[]
 
   @@index([userId, createdAt])
   @@index([userId, name])
@@ -72,6 +78,7 @@ model JobDescription {
   user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   analyses     Analysis[]
   applications JobApplication[]
+  resumeVersions ResumeVersion[]
 
   @@index([userId, createdAt])
   @@index([userId, targetRole])
@@ -236,4 +243,242 @@ model InterviewAnswer {
 
   @@index([sessionId, status])
   @@map("api_interview_answers")
+}
+
+// ─── Phase 7: Learning roadmap & skill gaps ──────────────────────────────────
+
+/// A generated learning plan. Regeneration creates a new version row and marks the
+/// previous one `superseded` (its id is kept in previousVersionId for history).
+model LearningRoadmap {
+  id                       String    @id @default(cuid())
+  userId                   String
+  targetRole               String
+  title                    String
+  objective                String    // job_readiness | interview_prep | project_development | skill_improvement
+  currentSkillLevel        String    // beginner | intermediate | advanced
+  weeklyStudyHours         Int
+  preferredSchedule        String    @default("flexible") // weekdays | weekends | flexible
+  preferredFormat          String    @default("mixed")    // documentation | tutorials | exercises | projects | mixed
+  targetCompletionDate     DateTime?
+  estimatedHours           Int       @default(0)
+  estimatedWeeks           Int       @default(0)
+  status                   String    @default("active") // active | archived | superseded
+  version                  Int       @default(1)
+  previousVersionId        String?
+  changeSummary            Json?
+  skillGapSummary          Json?
+  sourceResumeId           String?
+  sourceJobDescriptionId   String?
+  sourceAnalysisId         String?
+  sourceInterviewSessionIds Json?
+  provider                 String?
+  model                    String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  milestones RoadmapMilestone[]
+  skillGaps  SkillGap[]
+
+  @@index([userId, status])
+  @@index([userId, createdAt])
+  @@map("api_learning_roadmaps")
+}
+
+model RoadmapMilestone {
+  id                    String    @id @default(cuid())
+  roadmapId             String
+  sequenceNumber        Int
+  title                 String
+  description           String    @db.Text
+  requiredSkills        Json      // string[]
+  learningObjectives    Json      // string[]
+  estimatedHours        Int       @default(0)
+  /// sequenceNumbers of milestones that must be completed first (validated to reference earlier milestones)
+  prerequisiteSequences Json      // number[]
+  completionCriteria    String    @db.Text
+  status                String    @default("not_started") // locked | not_started | in_progress | completed
+  completedAt           DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  roadmap LearningRoadmap @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+  tasks   LearningTask[]
+
+  @@unique([roadmapId, sequenceNumber])
+  @@index([roadmapId, status])
+  @@map("api_roadmap_milestones")
+}
+
+model LearningTask {
+  id                 String    @id @default(cuid())
+  milestoneId        String
+  sequenceNumber     Int
+  title              String
+  description        String    @db.Text
+  skillName          String
+  taskType           String    // learn_concept | read_docs | tutorial | coding_exercise | mini_project | review_interview_questions | explain_concept | knowledge_checkpoint
+  difficulty         String    @default("intermediate")
+  estimatedMinutes   Int       @default(30)
+  isRequired         Boolean   @default(true)
+  scheduledDate      DateTime?
+  completionCriteria String    @db.Text
+  status             String    @default("not_started") // not_started | in_progress | paused | completed | skipped
+  notes              String?   @db.Text
+  actualStudyMinutes Int       @default(0)
+  /// For knowledge_checkpoint tasks: { id, type: mcq|conceptual|coding|project|checklist, passScore?, questions?[...], items?[...] }.
+  /// Correct answers are stripped before being sent to the client until an attempt is submitted.
+  checkpoint         Json?
+  checkpointAttempts Json?     // attempt history [{ at, score, passed, answers }]
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  milestone RoadmapMilestone   @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+  resources LearningResource[]
+
+  @@unique([milestoneId, sequenceNumber])
+  @@index([milestoneId, status])
+  @@index([scheduledDate])
+  @@map("api_learning_tasks")
+}
+
+/// Resources attached to a task. URLs are only stored when they come from the verified
+/// catalog (`urlVerified = true`); otherwise only a title / search suggestion is kept.
+model LearningResource {
+  id           String   @id @default(cuid())
+  taskId       String
+  title        String
+  resourceType String   // official_docs | tutorial | video_course | practice_platform | project_example | interview_prep | search_suggestion
+  url          String?
+  urlVerified  Boolean  @default(false)
+  provider     String   @default("third_party") // official | third_party | search
+  description  String   @db.Text
+  difficulty   String   @default("intermediate")
+  createdAt    DateTime @default(now())
+
+  task LearningTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("api_learning_resources")
+}
+
+/// Persistent per-user skill status, refreshed whenever a roadmap is generated and
+/// editable by the user ("I already know this").
+model SkillGap {
+  id                String    @id @default(cuid())
+  userId            String
+  roadmapId         String?
+  skillName         String
+  category          String
+  proficiencyStatus String    // demonstrated | needs_improvement | not_demonstrated | not_assessed | learning_in_progress
+  priority          String    // high | medium | low
+  priorityScore     Int       @default(0)
+  evidenceSources   Json      // string[]
+  explanation       String    @db.Text
+  whyItMatters      String    @db.Text
+  targetProficiency String    @default("working")
+  relatedTopics     Json?     // string[]
+  userConfirmed     Boolean   @default(false)
+  userNote          String?
+  lastAssessedAt    DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roadmap LearningRoadmap? @relation(fields: [roadmapId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, skillName])
+  @@index([userId, priorityScore])
+  @@map("api_skill_gaps")
+}
+
+model RecommendationDismissal {
+  id                String   @id @default(cuid())
+  userId            String
+  recommendationKey String
+  dismissedAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recommendationKey])
+  @@map("api_recommendation_dismissals")
+}
+
+// ─── Phase 8: resume builder ───────────────────────────────────────────────
+
+/// An editable, structured resume. The uploaded file and its extracted text on
+/// `Resume` are never modified; every edit lives on a version. `content` holds
+/// the ordered sections (see services/resumeBuilder/resumeContentSchema.js) and
+/// `formatting` the template options. Searchable metadata stays in columns.
+model ResumeVersion {
+  id               String   @id @default(cuid())
+  userId           String
+  resumeId         String?
+  jobDescriptionId String?
+  parentVersionId  String?
+  name             String
+  versionNumber    Int
+  kind             String   @default("custom") // original | improved | tailored | custom | restored
+  isOriginal       Boolean  @default(false)
+  templateId       String   @default("modern")
+  content          Json
+  formatting       Json
+  contentSource    String   @default("manual") // manual | heuristic | ai | duplicate | restore
+  targetJobTitle   String?
+  targetCompany    String?
+  lastQualityScore Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume         Resume?         @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  jobDescription JobDescription? @relation(fields: [jobDescriptionId], references: [id], onDelete: SetNull)
+  improvements   ResumeImprovement[]
+
+  @@index([userId, updatedAt])
+  @@index([resumeId, versionNumber])
+  @@map("api_resume_versions")
+}
+
+/// One AI suggestion for one field. Suggestions are stored separately from the
+/// resume content and only reach the content when the user accepts them.
+model ResumeImprovement {
+  id            String   @id @default(cuid())
+  versionId     String
+  batchId       String
+  mode          String   // improve | tailor
+  sectionId     String
+  entryId       String?
+  field         String   // summary | bullet:<index> | title | skills | ...
+  category      String   // clarity | impact | grammar | keywords | structure | relevance
+  originalText  String   @db.Text
+  suggestedText String   @db.Text
+  rationale     String   @db.Text
+  needsConfirmation Boolean @default(false)
+  confirmationQuestion String?
+  status        String   @default("pending") // pending | accepted | rejected | edited
+  acceptedText  String?  @db.Text
+  resolvedAt    DateTime?
+  createdAt     DateTime @default(now())
+
+  version ResumeVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([versionId, batchId])
+  @@index([versionId, status])
+  @@map("api_resume_improvements")
+}
+
+/// The user's default template and formatting for new versions.
+model ResumeTemplatePreference {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  templateId String   @default("modern")
+  formatting Json
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_resume_template_preferences")
 }

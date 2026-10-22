@@ -14,6 +14,7 @@ import { createJobDescriptionRoutes } from "./routes/jobDescriptionRoutes.js";
 import { createApplicationRoutes } from "./routes/applicationRoutes.js";
 import { createInterviewRoutes } from "./routes/interviewRoutes.js";
 import { createDashboardRoutes } from "./routes/dashboardRoutes.js";
+import { createLearningRoutes } from "./routes/learningRoutes.js";
 import { createAuthService } from "./services/authService.js";
 import { createAnalysisRepository } from "./models/analysisRepository.js";
 import { createResumeRepository } from "./models/resumeRepository.js";
@@ -21,13 +22,14 @@ import { createJobDescriptionRepository } from "./models/jobDescriptionRepositor
 import { createApplicationRepository } from "./models/applicationRepository.js";
 import { createInterviewRepository } from "./models/interviewRepository.js";
 import { createDashboardRepository } from "./models/dashboardRepository.js";
+import { createLearningRepository } from "./models/learningRepository.js";
 import { createLlmProvider, providerConfigFromEnv } from "./services/ai/llmProvider.js";
 import { createStorage } from "./services/storage/storageService.js";
 import { logger } from "./utils/logger.js";
 
 const REQUEST_TIMEOUT_MS = 120_000;
 /** Routes that call the LLM: timeout must exceed LLM_TIMEOUT_MS × (retries + 1). */
-const AI_ROUTE = /^\/api\/(analysis\/resume|analysis\/[a-z0-9]+\/regenerate|interviews|interviews\/[a-z0-9]+\/answers\/[a-z0-9]+\/evaluate)$/i;
+const AI_ROUTE = /^\/api\/(analysis\/resume|analysis\/[a-z0-9]+\/regenerate|interviews|interviews\/[a-z0-9]+\/answers\/[a-z0-9]+\/evaluate|learning\/roadmaps|learning\/roadmaps\/[a-z0-9]+\/regenerate)$/i;
 
 export function aiRequestBudgetMs(env) {
   return env.LLM_TIMEOUT_MS * (env.LLM_MAX_RETRIES + 1) + 30_000;
@@ -90,6 +92,7 @@ export function createApp({ env, prisma, llm, authService, storage }) {
     application: createApplicationRepository(prisma),
     interview: createInterviewRepository(prisma),
     dashboard: createDashboardRepository(prisma),
+    learning: createLearningRepository(prisma),
   };
 
   // Lazy provider construction: a missing key yields a 503 at request time, not a crash at boot.
@@ -138,6 +141,19 @@ export function createApp({ env, prisma, llm, authService, storage }) {
     })
   );
   app.use("/api/dashboard", createDashboardRoutes({ authService: auth, dashboardRepo: repos.dashboard }));
+  app.use(
+    "/api/learning",
+    createLearningRoutes({
+      authService: auth,
+      repo: repos.learning,
+      resumeRepo: repos.resume,
+      jobDescriptionRepo: repos.jobDescription,
+      analysisRepo: repos.analysis,
+      interviewRepo: repos.interview,
+      getLlm,
+      analysisRateLimit: env.ANALYSIS_RATE_LIMIT,
+    })
+  );
 
   app.use(notFoundHandler);
   app.use(errorHandler);

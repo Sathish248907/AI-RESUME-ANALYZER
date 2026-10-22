@@ -214,3 +214,22 @@ Deletes an analysis owned by the authenticated user.
 
 - **Auth Required**: Yes
 - **Response** (`204 No Content`)
+
+## Learning roadmaps (Phase 7)
+
+All routes live under `/api/learning` and require `Authorization: Bearer <jwt>`; every record is scoped to the owner (404 otherwise). The full request/response reference, status codes and derivation rules are in [phase7.md](phase7.md).
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/learning/roadmaps` | AI generation (long request budget, AI rate limiter) |
+| GET | `/api/learning/roadmaps` | `status`, `page`, `limit` |
+| GET / PATCH / DELETE | `/api/learning/roadmaps/:id` | |
+| POST | `/api/learning/roadmaps/:id/regenerate` | `apply=false` preview (default) / `apply=true` new version |
+| GET | `/api/learning/roadmaps/:id/progress` | progress, weekly plan, next action |
+| GET | `/api/learning/roadmaps/:id/tasks` | `status`, `milestoneId` |
+| PATCH | `/api/learning/tasks/:taskId` | status / notes / schedule / study minutes |
+| POST | `/api/learning/tasks/:taskId/complete` · `/reopen` | |
+| GET | `/api/learning/tasks/:taskId/resources` | |
+| POST | `/api/learning/tasks/:taskId/checkpoints/:checkpointId/submit` | MCQ graded server-side; other types self-reported |
+| GET | `/api/learning/skill-gaps` · PATCH `/api/learning/skill-gaps/:id` | |
+| GET | `/api/learning/recommendations` · POST `/api/learning/recommendations/:key/dismiss` | |
