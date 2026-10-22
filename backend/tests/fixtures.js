@@ -103,7 +103,59 @@ function defaultBehaviour(req) {
   if (req.schemaName === "interview_questions") return validQuestionBatch(req);
   if (req.schemaName === "answer_evaluation") return validEvaluation(req);
   if (req.schemaName === "learning_roadmap") return validRoadmapOutput(req);
+  if (req.schemaName === "resume_structure") return validResumeStructure(req);
+  if (req.schemaName === "resume_improvements") return validImprovements(req);
+  if (req.schemaName === "resume_tailoring") return validTailoring(req);
+  if (req.schemaName === "career_coach") return validCoachReply(req);
   return validAiOutput();
+}
+
+/** Grounded coach reply: echoes a recorded fact, adds a suggestion, links to a known page, invents one "fact". */
+export function validCoachReply(req) {
+  const facts = [...(req?.user ?? "").matchAll(/^- (.+)$/gm)].map((m) => m[1]).filter((f) => !f.includes(": /dashboard"));
+  const question = /<user_message>\n([\s\S]*?)\n<\/user_message>/.exec(req?.user ?? "")?.[1] ?? "";
+  const first = facts[0] ?? "No facts";
+  return {
+    reply: `Based on your records (${first.slice(0, 60)}…), I'd suggest focusing on one gap this week. ${/salary|offer/i.test(question) ? "I don't have any offer or salary data on file." : ""}`.trim(),
+    factsUsed: [first, "You were hired at Google last week"],
+    suggestions: ["Practise one weak topic in a focused mock interview"],
+    links: [{ label: "Learning roadmap", path: "/dashboard/learning" }, { label: "Evil", path: "https://evil.example/phish" }, { label: "Admin", path: "/admin" }],
+    clarifyingQuestion: /which role|what role|^help$/i.test(question) ? "Which target role should I focus on?" : null,
+  };
+}
+
+/** Verbatim structure of RESUME_TEXT (what a well-behaved model returns). */
+export function validResumeStructure() {
+  return {
+    personal: { fullName: "Jane Doe", title: "", email: "jane.doe@example.com", phone: "+1 555 123 4567", location: "", website: "", linkedin: "linkedin.com/in/janedoe", github: "" },
+    sections: [
+      { type: "summary", title: "Summary", text: "Frontend developer with 4 years of experience building React applications." },
+      { type: "experience", title: "Experience", entries: [{ role: "Frontend Developer", company: "Acme Corp", location: "", startDate: "2021", endDate: "2024", current: false, bullets: ["Built a React and TypeScript design system used by 12 product teams", "Improved Lighthouse performance score from 61 to 94", "Wrote unit tests with Jest and React Testing Library"] }] },
+      { type: "education", title: "Education", entries: [{ degree: "B.Sc. Computer Science", institution: "State University", location: "", startDate: "2017", endDate: "2021", details: [] }] },
+      { type: "skills", title: "Skills", groups: [{ name: "", items: ["React", "TypeScript", "JavaScript", "HTML", "CSS", "Jest", "Git", "REST APIs"] }] },
+    ],
+  };
+}
+
+/** Parses the "Editable fields" block of the prompt and rewrites the first two bullets + the summary. */
+export function validImprovements(req) {
+  const fields = [...(req?.user ?? "").matchAll(/- sectionId=(\S+) entryId=(\S+) field=(\S+) \[[^\]]*\]\n\s+"([^"]*)"/g)].map((m) => ({ sectionId: m[1], entryId: m[2] === "null" ? null : m[2], field: m[3], text: m[4] }));
+  const bullets = fields.filter((f) => f.field.startsWith("bullet:")).slice(0, 2);
+  const summary = fields.find((f) => f.field === "summary");
+  return {
+    suggestions: [
+      ...bullets.map((b, i) => ({ sectionId: b.sectionId, entryId: b.entryId, field: b.field, category: i === 0 ? "impact" : "clarity", suggestedText: `Delivered ${b.text.charAt(0).toLowerCase()}${b.text.slice(1)} across the platform`, rationale: "Leads with an outcome verb and keeps the original facts.", missingDetailQuestion: null })),
+      // Deliberately introduces a number that is not in the resume → must be flagged needsConfirmation
+      ...(bullets[0] ? [{ sectionId: bullets[0].sectionId, entryId: bullets[0].entryId, field: "bullet:2", category: "impact", suggestedText: "Cut CI pipeline time by 45% with Kubernetes-based runners", rationale: "Quantifies the result.", missingDetailQuestion: "What was the actual CI time reduction?" }] : []),
+    ],
+    summaryRewrite: summary ? `${summary.text} Focused on accessible, high-performance interfaces.` : null,
+    generalNotes: ["Consider adding a Projects section."],
+  };
+}
+
+export function validTailoring(req) {
+  const base = validImprovements(req);
+  return { ...base, keywordsToAdd: ["TypeScript", "GraphQL"], emphasise: [], genuineGaps: ["AWS"] };
 }
 
 /** Minimal valid roadmap: 3 milestones, each with ordinary tasks plus one MCQ knowledge checkpoint. */
@@ -239,13 +291,32 @@ const RELATIONS = {
   recommendationDismissal: {
     user: { model: "user", kind: "one", localKey: "userId" },
   },
+  resumeVersion: {
+    user: { model: "user", kind: "one", localKey: "userId" },
+    resume: { model: "resume", kind: "one", localKey: "resumeId" },
+    jobDescription: { model: "jobDescription", kind: "one", localKey: "jobDescriptionId" },
+    improvements: { model: "resumeImprovement", kind: "many", foreignKey: "versionId" },
+  },
+  resumeImprovement: {
+    version: { model: "resumeVersion", kind: "one", localKey: "versionId" },
+  },
+  resumeTemplatePreference: {
+    user: { model: "user", kind: "one", localKey: "userId" },
+  },
+  careerProfile: { user: { model: "user", kind: "one", localKey: "userId" } },
+  careerAssessment: { user: { model: "user", kind: "one", localKey: "userId" }, recommendations: { model: "careerRecommendation", kind: "many", foreignKey: "assessmentId" } },
+  careerRecommendation: { user: { model: "user", kind: "one", localKey: "userId" }, assessment: { model: "careerAssessment", kind: "one", localKey: "assessmentId" } },
+  careerActionPlan: { user: { model: "user", kind: "one", localKey: "userId" }, tasks: { model: "careerActionTask", kind: "many", foreignKey: "planId" } },
+  careerActionTask: { plan: { model: "careerActionPlan", kind: "one", localKey: "planId" }, user: { model: "user", kind: "one", localKey: "userId" } },
+  careerCoachConversation: { user: { model: "user", kind: "one", localKey: "userId" }, messages: { model: "careerCoachMessage", kind: "many", foreignKey: "conversationId" } },
+  careerCoachMessage: { conversation: { model: "careerCoachConversation", kind: "one", localKey: "conversationId" } },
 };
 
 /** onDelete behaviour: which foreign keys to null out / which rows to cascade-delete. */
 const ON_DELETE = {
-  user: { cascade: [["analysis", "userId"], ["resume", "userId"], ["jobDescription", "userId"], ["jobApplication", "userId"], ["interviewSession", "userId"], ["learningRoadmap", "userId"], ["skillGap", "userId"], ["recommendationDismissal", "userId"]] },
-  resume: { setNull: [["analysis", "resumeId"], ["jobApplication", "resumeId"]] },
-  jobDescription: { setNull: [["analysis", "jobDescriptionId"], ["jobApplication", "jobDescriptionId"]] },
+  user: { cascade: [["analysis", "userId"], ["resume", "userId"], ["jobDescription", "userId"], ["jobApplication", "userId"], ["interviewSession", "userId"], ["learningRoadmap", "userId"], ["skillGap", "userId"], ["recommendationDismissal", "userId"], ["resumeVersion", "userId"], ["resumeTemplatePreference", "userId"], ["careerProfile", "userId"], ["careerAssessment", "userId"], ["careerRecommendation", "userId"], ["careerActionPlan", "userId"], ["careerActionTask", "userId"], ["careerCoachConversation", "userId"]] },
+  resume: { setNull: [["analysis", "resumeId"], ["jobApplication", "resumeId"], ["resumeVersion", "resumeId"]] },
+  jobDescription: { setNull: [["analysis", "jobDescriptionId"], ["jobApplication", "jobDescriptionId"], ["resumeVersion", "jobDescriptionId"]] },
   analysis: { setNull: [["jobApplication", "analysisId"]] },
   jobApplication: {},
   interviewSession: { cascade: [["interviewQuestion", "sessionId"], ["interviewAnswer", "sessionId"]] },
@@ -257,6 +328,16 @@ const ON_DELETE = {
   learningResource: {},
   skillGap: {},
   recommendationDismissal: {},
+  resumeVersion: { cascade: [["resumeImprovement", "versionId"]] },
+  resumeImprovement: {},
+  resumeTemplatePreference: {},
+  careerProfile: {},
+  careerAssessment: { setNull: [["careerRecommendation", "assessmentId"]] },
+  careerRecommendation: {},
+  careerActionPlan: { cascade: [["careerActionTask", "planId"]] },
+  careerActionTask: {},
+  careerCoachConversation: { cascade: [["careerCoachMessage", "conversationId"]] },
+  careerCoachMessage: {},
 };
 
 const DEFAULTS = {
@@ -274,6 +355,16 @@ const DEFAULTS = {
   learningResource: () => ({ url: null, urlVerified: false, provider: "search", description: "", difficulty: "intermediate" }),
   skillGap: () => ({ roadmapId: null, proficiencyStatus: "not_assessed", priority: "medium", priorityScore: 0, evidenceSources: [], explanation: "", whyItMatters: "", targetProficiency: "working", relatedTopics: null, userConfirmed: false, userNote: null, lastAssessedAt: null }),
   recommendationDismissal: () => ({}),
+  resumeVersion: () => ({ resumeId: null, jobDescriptionId: null, parentVersionId: null, kind: "custom", isOriginal: false, templateId: "modern", contentSource: "manual", targetJobTitle: null, targetCompany: null, lastQualityScore: null }),
+  resumeImprovement: () => ({ entryId: null, needsConfirmation: false, confirmationQuestion: null, status: "pending", acceptedText: null, resolvedAt: null }),
+  resumeTemplatePreference: () => ({ templateId: "modern" }),
+  careerProfile: () => ({ careerLevel: "fresher", workMode: "any", salaryMin: null, salaryMax: null, salaryCurrency: null, goals: null }),
+  careerAssessment: () => ({}),
+  careerRecommendation: () => ({ assessmentId: null, priority: "medium", effortMinutes: null, status: "open", completedAt: null }),
+  careerActionPlan: () => ({ status: "active", targetRole: null, generatedAt: new Date() }),
+  careerActionTask: () => ({ description: null, href: null, estimatedMinutes: 30, dueDate: null, isOptional: false, sourceKey: null, status: "pending", completedAt: null, notes: null }),
+  careerCoachConversation: () => ({ title: "New conversation" }),
+  careerCoachMessage: () => ({ factsUsed: null, suggestions: null, links: null, clarifying: false, provider: null, model: null }),
 };
 
 export function fakePrisma() {

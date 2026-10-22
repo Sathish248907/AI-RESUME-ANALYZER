@@ -15,7 +15,7 @@ import {
 import { toApiClientError } from "@/services/api";
 import AnalysisResultsLayout from "@/components/results/AnalysisResultsLayout";
 import { formatDate } from "@/lib/utils";
-import { ArrowLeft, Download, Trash2, PlusCircle, History, FileText, Calendar, Briefcase, AlertCircle, RefreshCw, Bot, Building2, LogIn } from "lucide-react";
+import { ArrowLeft, Download, Trash2, PlusCircle, History, FileText, Calendar, Briefcase, AlertCircle, RefreshCw, Bot, Building2, LogIn, PenSquare } from "lucide-react";
 import Button from "@/components/common/Button";
 
 type LoadState = "loading" | "ready" | "not-found" | "error" | "unauthorized";
@@ -277,8 +277,8 @@ export default function ResumeAnalysisPage() {
         <Link href="/dashboard/my-resumes" className="flex items-center justify-center gap-2 px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors text-sm">
           <History className="w-4 h-4" /> View Resume History
         </Link>
-        <Link href="/dashboard/job-analyzer" className="flex items-center justify-center gap-2 px-4 py-3 bg-white border border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors text-sm">
-          <Briefcase className="w-4 h-4" /> Job Analyzer
+        <Link href="/dashboard/resume-builder" className="flex items-center justify-center gap-2 px-4 py-3 bg-white border border-indigo-200 text-indigo-700 rounded-xl font-medium hover:bg-indigo-50 transition-colors text-sm">
+          <PenSquare className="w-4 h-4" /> Improve this resume
         </Link>
       </div>
     </div>

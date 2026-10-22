@@ -15,6 +15,8 @@ import { createApplicationRoutes } from "./routes/applicationRoutes.js";
 import { createInterviewRoutes } from "./routes/interviewRoutes.js";
 import { createDashboardRoutes } from "./routes/dashboardRoutes.js";
 import { createLearningRoutes } from "./routes/learningRoutes.js";
+import { createResumeBuilderRoutes } from "./routes/resumeBuilderRoutes.js";
+import { createCareerRoutes } from "./routes/careerRoutes.js";
 import { createAuthService } from "./services/authService.js";
 import { createAnalysisRepository } from "./models/analysisRepository.js";
 import { createResumeRepository } from "./models/resumeRepository.js";
@@ -23,13 +25,15 @@ import { createApplicationRepository } from "./models/applicationRepository.js";
 import { createInterviewRepository } from "./models/interviewRepository.js";
 import { createDashboardRepository } from "./models/dashboardRepository.js";
 import { createLearningRepository } from "./models/learningRepository.js";
+import { createResumeBuilderRepository } from "./models/resumeBuilderRepository.js";
+import { createCareerRepository } from "./models/careerRepository.js";
 import { createLlmProvider, providerConfigFromEnv } from "./services/ai/llmProvider.js";
 import { createStorage } from "./services/storage/storageService.js";
 import { logger } from "./utils/logger.js";
 
 const REQUEST_TIMEOUT_MS = 120_000;
 /** Routes that call the LLM: timeout must exceed LLM_TIMEOUT_MS × (retries + 1). */
-const AI_ROUTE = /^\/api\/(analysis\/resume|analysis\/[a-z0-9]+\/regenerate|interviews|interviews\/[a-z0-9]+\/answers\/[a-z0-9]+\/evaluate|learning\/roadmaps|learning\/roadmaps\/[a-z0-9]+\/regenerate)$/i;
+const AI_ROUTE = /^\/api\/(analysis\/resume|analysis\/[a-z0-9]+\/regenerate|interviews|interviews\/[a-z0-9]+\/answers\/[a-z0-9]+\/evaluate|learning\/roadmaps|learning\/roadmaps\/[a-z0-9]+\/regenerate|resume-builder\/versions|resume-builder\/[a-z0-9]+\/versions|resume-builder\/versions\/[a-z0-9]+\/(improve|tailor)|career\/coach\/conversations|career\/coach\/conversations\/[a-z0-9]+\/messages)$/i;
 
 export function aiRequestBudgetMs(env) {
   return env.LLM_TIMEOUT_MS * (env.LLM_MAX_RETRIES + 1) + 30_000;
@@ -93,6 +97,8 @@ export function createApp({ env, prisma, llm, authService, storage }) {
     interview: createInterviewRepository(prisma),
     dashboard: createDashboardRepository(prisma),
     learning: createLearningRepository(prisma),
+    resumeBuilder: createResumeBuilderRepository(prisma),
+    career: createCareerRepository(prisma),
   };
 
   // Lazy provider construction: a missing key yields a 503 at request time, not a crash at boot.
@@ -154,6 +160,21 @@ export function createApp({ env, prisma, llm, authService, storage }) {
       analysisRateLimit: env.ANALYSIS_RATE_LIMIT,
     })
   );
+
+  app.use(
+    "/api/resume-builder",
+    createResumeBuilderRoutes({
+      authService: auth,
+      repo: repos.resumeBuilder,
+      resumeRepo: repos.resume,
+      jobDescriptionRepo: repos.jobDescription,
+      analysisRepo: repos.analysis,
+      getLlm,
+      analysisRateLimit: env.ANALYSIS_RATE_LIMIT,
+    })
+  );
+
+  app.use("/api/career", createCareerRoutes({ authService: auth, repo: repos.career, getLlm, analysisRateLimit: env.ANALYSIS_RATE_LIMIT }));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

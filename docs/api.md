@@ -233,3 +233,33 @@ All routes live under `/api/learning` and require `Authorization: Bearer <jwt>`;
 | POST | `/api/learning/tasks/:taskId/checkpoints/:checkpointId/submit` | MCQ graded server-side; other types self-reported |
 | GET | `/api/learning/skill-gaps` · PATCH `/api/learning/skill-gaps/:id` | |
 | GET | `/api/learning/recommendations` · POST `/api/learning/recommendations/:key/dismiss` | |
+
+## Resume builder (Phase 8)
+
+All routes live under `/api/resume-builder` and require `Authorization: Bearer <jwt>`; records are owner-scoped (404 otherwise). Full reference in [phase8.md](phase8.md).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/resume-builder/templates` · GET/PUT `/preferences` | |
+| GET | `/api/resume-builder/:resumeId` | creates the read-only original version on first access |
+| POST | `/api/resume-builder/:resumeId/versions` · `/versions` | from upload (`structure` heuristic/ai), from version, or blank |
+| GET / PATCH / DELETE | `/api/resume-builder/versions/:id` | PATCH = autosave with `expectedUpdatedAt` |
+| POST | `/api/resume-builder/versions/:id/duplicate` · `/restore` · `/compare` | |
+| POST | `/api/resume-builder/versions/:id/improve` · `/tailor` | AI (long budget, AI limiter) |
+| GET / POST | `/api/resume-builder/versions/:id/improvements[/:improvementId]` | accept / edit / reject / reset |
+| GET | `/api/resume-builder/versions/:id/quality-check` | deterministic quality report |
+| POST | `/api/resume-builder/versions/:id/export/pdf` | `application/pdf`, `X-Resume-Pages` |
+
+## Career coach (Phase 9)
+
+All routes live under `/api/career` and require `Authorization: Bearer <jwt>`; records are owner-scoped. Full reference in [phase9.md](phase9.md).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET / PUT | `/api/career/profile` | |
+| POST / GET | `/api/career/assessments[/:assessmentId]` | deterministic readiness (no AI) |
+| GET / PATCH | `/api/career/recommendations[/:id]` | status open / done / dismissed |
+| GET | `/api/career/dashboard` · `/job-priorities` · `/interview-prep` | |
+| POST / GET | `/api/career/action-plans/generate` · `/action-plans/current` | |
+| POST / PATCH / DELETE | `/api/career/action-tasks[/:taskId]` | |
+| POST / GET / PATCH / DELETE | `/api/career/coach/conversations[/:id]` · POST `/:id/messages` | AI chat (long budget, AI limiter) |

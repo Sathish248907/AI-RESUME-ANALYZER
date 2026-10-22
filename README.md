@@ -241,3 +241,11 @@ See [docs/phase6.md](docs/phase6.md) for the interview models, versioned scoring
 ## Phase 7 — Personalized learning roadmap & skill gap tracking
 
 See [docs/phase7.md](docs/phase7.md) for the skill-gap scoring method, roadmap generation/validation pipeline, progress derivation, `/api/learning/*` endpoints, pages, tests and limitations.
+
+## Phase 8 — AI resume improvement assistant & resume builder
+
+See [docs/phase8.md](docs/phase8.md) for the content schema, grounded AI suggestion flow, quality checks, versioning, PDF export, `/api/resume-builder/*` endpoints, tests and limitations.
+
+## Phase 9 — AI career coach & job application intelligence
+
+See [docs/phase9.md](docs/phase9.md) for the readiness method, recommendation / priority / plan engines, grounded coach chat, `/api/career/*` endpoints, tests and limitations.

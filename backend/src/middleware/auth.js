@@ -1,9 +1,6 @@
 import { unauthorized } from "../utils/errors.js";
 
-/**
- * requireAuth — verifies the Bearer token and attaches `req.user = { id }`.
- * The user id is taken from the signed token, never from the request body.
- */
+
 export function requireAuth(authService) {
   return async function requireAuthMiddleware(req, _res, next) {
     try {

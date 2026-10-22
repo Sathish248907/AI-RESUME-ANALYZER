@@ -100,7 +100,11 @@ export function toApiClientError(err: unknown): ApiClientError {
 
 api.interceptors.response.use(
   (r) => r,
-  (err) => {
+  async (err) => {
+    // Blob responses (PDF downloads) carry JSON error bodies as a Blob — decode them first.
+    if (axios.isAxiosError(err) && err.response && typeof Blob !== "undefined" && err.response.data instanceof Blob && /json/i.test(err.response.data.type)) {
+      try { err.response.data = JSON.parse(await err.response.data.text()); } catch { /* keep the generic message */ }
+    }
     const normalised = toApiClientError(err);
     if (normalised.isAuthError) setToken(null); // expired / invalid session
     return Promise.reject(normalised);

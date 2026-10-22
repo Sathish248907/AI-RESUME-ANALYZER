@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FileText, Upload, Search, Pencil, Trash2, Download, Sparkles, History, Check, X, LogIn, FlaskConical, Briefcase } from "lucide-react";
+import { FileText, Upload, Search, Pencil, Trash2, Download, Sparkles, History, Check, X, LogIn, FlaskConical, Briefcase, PenSquare } from "lucide-react";
 import { Card, CardContent } from "@/components/common/Card";
 import Button from "@/components/common/Button";
 import { Badge } from "@/components/common/Badge";
@@ -267,6 +267,7 @@ export default function MyResumesPage() {
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     <Button size="sm" onClick={() => router.push(`/dashboard/resume-analyzer?resumeId=${r.id}`)} title="Analyze against a job"><Sparkles className="w-4 h-4" /> Analyze</Button>
+                    <Button size="sm" variant="outline" onClick={() => router.push(`/dashboard/resume-builder?resumeId=${r.id}`)} title="Edit a copy, get AI improvements and export a PDF"><PenSquare className="w-4 h-4" /> Improve</Button>
                     <Button size="sm" variant="ghost" onClick={() => { setRenaming(r); setRenameValue(r.name); setRenameRole(r.targetRole ?? ""); }} aria-label="Rename"><Pencil className="w-4 h-4" /></Button>
                     {r.hasStoredFile && <Button size="sm" variant="ghost" onClick={() => handleDownload(r)} aria-label="Download original"><Download className="w-4 h-4" /></Button>}
                     <Button size="sm" variant="ghost" onClick={() => setDeleting(r)} aria-label="Delete" className="text-red-500 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
