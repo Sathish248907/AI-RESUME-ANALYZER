@@ -13,19 +13,54 @@ import { z } from "zod";
 
 export const CONTENT_SCHEMA_VERSION = "resume-content-1.0";
 export const SECTION_TYPES = ["summary", "skills", "experience", "projects", "education", "certifications", "achievements", "languages", "custom"];
-export const TEMPLATE_IDS = ["modern", "minimal_ats", "technical", "classic"];
+export const TEMPLATE_IDS = ["modern", "minimal_ats", "technical", "fresher", "experienced", "classic"];
 export const FONT_FAMILIES = ["Helvetica", "Times", "Courier"];
 export const MARGINS = ["narrow", "normal", "wide"];
 export const SPACINGS = ["compact", "normal", "relaxed"];
 export const HEADING_STYLES = ["uppercase", "capitalize"];
 export const BULLET_STYLES = ["disc", "dash", "arrow"];
 
+/**
+ * Section order a template imposes. `null` keeps the user's own order.
+ * Types missing from a list fall to the end in the user's relative order.
+ */
+export const TEMPLATE_SECTION_ORDER = Object.freeze({
+  modern: null,
+  minimal_ats: null,
+  technical: ["summary", "skills", "experience", "projects", "education", "certifications", "achievements", "languages", "custom"],
+  fresher: ["summary", "education", "skills", "projects", "experience", "certifications", "achievements", "languages", "custom"],
+  experienced: ["summary", "experience", "skills", "projects", "achievements", "education", "certifications", "languages", "custom"],
+  classic: ["summary", "experience", "achievements", "education", "skills", "certifications", "languages", "custom"],
+});
+
+/**
+ * All six templates are single-column, real-text, no tables/sidebars/images, so
+ * all of them are parseable. `atsSafe` marks the two that additionally drop
+ * colour and decorative rules — the most conservative choice. No template can
+ * be promised to work with every applicant tracking system.
+ */
 export const TEMPLATES = [
-  { id: "modern", name: "Modern Professional", description: "Accent-coloured headings, clean two-tone layout, good for most roles.", defaults: { accentColor: "#2563eb", headingStyle: "uppercase", fontFamily: "Helvetica" } },
-  { id: "minimal_ats", name: "Minimal ATS-Friendly", description: "Single column, plain headings, no colour — the safest choice for automated screening.", defaults: { accentColor: "#111111", headingStyle: "uppercase", fontFamily: "Helvetica" } },
-  { id: "technical", name: "Technical Developer", description: "Skills first, compact bullets, monospace accents for technologies.", defaults: { accentColor: "#0f766e", headingStyle: "capitalize", fontFamily: "Helvetica" } },
-  { id: "classic", name: "Classic Corporate", description: "Serif typography, centred header, traditional section order.", defaults: { accentColor: "#1f2937", headingStyle: "uppercase", fontFamily: "Times" } },
+  { id: "minimal_ats", name: "ATS Classic", description: "Single column, plain black headings, no rules or colour — the most conservative choice for automated screening.", bestFor: "Any role, especially large-employer portals", atsSafe: true, defaults: { accentColor: "#111111", headingStyle: "uppercase", fontFamily: "Helvetica" } },
+  { id: "modern", name: "Modern Professional", description: "Clean typography, strong accent headings and balanced spacing. Suits most roles.", bestFor: "Most professional roles", atsSafe: false, defaults: { accentColor: "#2563eb", headingStyle: "uppercase", fontFamily: "Helvetica" } },
+  { id: "technical", name: "Software Developer", description: "Skills and projects lead, compact bullets, monospace technology lists.", bestFor: "Developers and engineers", atsSafe: false, defaults: { accentColor: "#0f766e", headingStyle: "capitalize", fontFamily: "Helvetica" } },
+  { id: "fresher", name: "Fresher / Graduate", description: "Education first, then skills, projects and internships — for candidates without long employment history.", bestFor: "Students, graduates and first jobs", atsSafe: false, defaults: { accentColor: "#4338ca", headingStyle: "uppercase", fontFamily: "Helvetica" } },
+  { id: "experienced", name: "Experienced Professional", description: "Employment history leads, with achievements given their own section before education.", bestFor: "Mid-level and senior individual contributors", atsSafe: false, defaults: { accentColor: "#0f172a", headingStyle: "uppercase", fontFamily: "Helvetica" } },
+  { id: "classic", name: "Executive / Corporate", description: "Serif typography, centred header, restrained formal layout for senior and leadership roles.", bestFor: "Senior, executive and corporate roles", atsSafe: true, defaults: { accentColor: "#1f2937", headingStyle: "uppercase", fontFamily: "Times" } },
 ];
+
+/** Templates whose defaults drop colour and decorative rules. */
+export const ATS_SAFE_TEMPLATE_IDS = TEMPLATES.filter((t) => t.atsSafe).map((t) => t.id);
+
+/**
+ * Order `sections` the way `templateId` wants them. Stable: sections of equal
+ * rank keep their relative position, and unknown types go last.
+ */
+export function orderSectionsForTemplate(sections, templateId) {
+  const order = TEMPLATE_SECTION_ORDER[templateId];
+  if (!order) return [...(sections ?? [])];
+  const rank = (s) => { const i = order.indexOf(s.type); return i === -1 ? order.length : i; };
+  return [...(sections ?? [])].map((s, i) => ({ s, i })).sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i).map((x) => x.s);
+}
 
 export const DEFAULT_FORMATTING = Object.freeze({
   fontFamily: "Helvetica",
@@ -37,6 +72,7 @@ export const DEFAULT_FORMATTING = Object.freeze({
   bulletStyle: "disc",
   pageSize: "A4",
   layout: "multi", // single = warn when content exceeds one page
+  atsMode: false, // force the conservative rendering on any template (no colour, no rules)
 });
 
 const MAX_TEXT = 4000;
@@ -97,6 +133,8 @@ export const formattingSchema = z.object({
   bulletStyle: z.enum(BULLET_STYLES).default(DEFAULT_FORMATTING.bulletStyle),
   pageSize: z.literal("A4").default("A4"),
   layout: z.enum(["single", "multi"]).default(DEFAULT_FORMATTING.layout),
+  /** ATS mode: render without accent colour or decorative rules whatever the template. */
+  atsMode: z.coerce.boolean().default(DEFAULT_FORMATTING.atsMode),
 });
 
 export const newId = (prefix = "s") => `${prefix}_${randomBytes(5).toString("hex")}`;

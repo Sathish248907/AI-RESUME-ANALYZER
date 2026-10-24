@@ -170,6 +170,13 @@ test("recommendations, job priorities, action plan and dashboard derive from rec
   assert.equal(dash.learning.percent, 0);
   assert.ok(dash.nextAction && dash.nextAction.priority === "high");
   assert.equal(dash.jobMatch.best.matchScore, 72);
+  assert.equal(dash.applications.rates.responseRate, null, "too few applications for conversion rates");
+  const many = { ...snapshot, applications: [["APPLIED"], ["APPLIED"], ["ASSESSMENT"], ["INTERVIEW"], ["OFFER"], ["REJECTED"], ["INTERESTED"], ["WITHDRAWN"]].map(([status], i) => ({ id: `a${i}`, companyName: `C${i}`, jobTitle: "Dev", status, updatedAt: now })) };
+  const rates = buildCareerDashboard({ snapshot: many, latestAssessment: null, recommendations: [], plan: null, now }).applications.rates;
+  assert.equal(rates.sampleSize, 6);
+  assert.equal(rates.responseRate, 67, "4 of 6 submitted got a response");
+  assert.equal(rates.interviewRate, 33);
+  assert.equal(rates.offerRate, 17);
 });
 
 test("coach: facts are compact and contain no resume text; links filtered; unverifiable 'facts' demoted to suggestions", async () => {

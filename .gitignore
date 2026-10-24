@@ -47,3 +47,6 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# local dev server logs
+.logs/

@@ -41,7 +41,7 @@ function HubInner() {
     if (!user) return;
     setLoading(true); setError(null);
     try {
-      const [r, v, h] = await Promise.all([listResumes({ limit: 100 }), listVersions({ limit: 200 }), getBackendHealth()]);
+      const [r, v, h] = await Promise.all([listResumes({ limit: 100 }), listVersions({ limit: 100 }), getBackendHealth()]);
       setResumes(r.resumes); setVersions(v.versions); setAiConfigured(Boolean(h?.ai.configured));
     } catch (err) { setError(toApiClientError(err).message); } finally { setLoading(false); }
   }, [user]);

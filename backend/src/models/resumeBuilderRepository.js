@@ -62,14 +62,22 @@ export function createResumeBuilderRepository(prisma) {
     async createImprovements(versionId, batchId, suggestions) {
       if (!suggestions.length) return [];
       await prisma.resumeImprovement.createMany({
-        data: suggestions.map((s) => ({ versionId, batchId, mode: s.mode, sectionId: s.sectionId, entryId: s.entryId ?? null, field: s.field, category: s.category, originalText: s.originalText, suggestedText: s.suggestedText, rationale: s.rationale, needsConfirmation: Boolean(s.needsConfirmation), confirmationQuestion: s.confirmationQuestion ?? null })),
+        data: suggestions.map((s) => ({
+          versionId, batchId, mode: s.mode, sectionId: s.sectionId, entryId: s.entryId ?? null, field: s.field, category: s.category,
+          suggestionGroup: s.group ?? null, priority: s.priority ?? "medium", title: s.title ?? null, issue: s.issue ?? null, benefit: s.benefit ?? null,
+          originalText: s.originalText, suggestedText: s.suggestedText, rationale: s.rationale,
+          needsConfirmation: Boolean(s.needsConfirmation), confirmationQuestion: s.confirmationQuestion ?? null,
+        })),
       });
       return prisma.resumeImprovement.findMany({ where: { versionId, batchId }, orderBy: { createdAt: "asc" } });
     },
 
-    async listImprovements(versionId, userId, { status, batchId } = {}) {
+    async listImprovements(versionId, userId, { status, batchId, group, priority } = {}) {
       await load(versionId, userId);
-      return prisma.resumeImprovement.findMany({ where: { versionId, ...(status ? { status } : {}), ...(batchId ? { batchId } : {}) }, orderBy: [{ createdAt: "desc" }] });
+      return prisma.resumeImprovement.findMany({
+        where: { versionId, ...(status ? { status } : {}), ...(batchId ? { batchId } : {}), ...(group ? { suggestionGroup: group } : {}), ...(priority ? { priority } : {}) },
+        orderBy: [{ createdAt: "desc" }],
+      });
     },
 
     async getImprovement(id, userId) {
@@ -85,6 +93,61 @@ export function createResumeBuilderRepository(prisma) {
     /** Drop pending suggestions from older batches when a new batch is generated. */
     async clearPending(versionId, mode) {
       await prisma.resumeImprovement.deleteMany({ where: { versionId, mode, status: "pending" } });
+    },
+
+    // ── ATS assessments ─────────────────────────────────────────────────────
+    /**
+     * Store one assessment. The breakdown is stored with the score so a
+     * historical number stays explainable by the weights that produced it.
+     */
+    async createAtsAssessment(userId, versionId, assessment, { jobDescriptionId = null } = {}) {
+      await load(versionId, userId);
+      return prisma.resumeAtsAssessment.create({
+        data: {
+          userId, versionId, jobDescriptionId,
+          mode: assessment.mode, overallScore: assessment.overall, label: assessment.label,
+          jobTitle: assessment.jobTitle ?? null, targetRole: assessment.targetRole ?? null, templateId: assessment.templateId ?? null,
+          categories: assessment.categories, findings: assessment.actionPlan ?? assessment.findings ?? [],
+          keywordCoverage: assessment.keywordCoverage ?? null, skills: assessment.skills ?? null,
+          weights: assessment.weights, method: assessment.method,
+        },
+      });
+    },
+
+    /** Newest first. `mode` keeps general and job-specific runs as separate series. */
+    async listAtsAssessments(userId, { versionId, mode, limit = 30 } = {}) {
+      if (versionId) await load(versionId, userId);
+      return prisma.resumeAtsAssessment.findMany({
+        where: { userId, ...(versionId ? { versionId } : {}), ...(mode ? { mode } : {}) },
+        select: { id: true, versionId: true, jobDescriptionId: true, mode: true, overallScore: true, label: true, jobTitle: true, targetRole: true, templateId: true, categories: true, keywordCoverage: true, method: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      });
+    },
+
+    async findAtsAssessment(id, userId) {
+      const row = await prisma.resumeAtsAssessment.findFirst({ where: { id, userId } });
+      if (!row) throw notFound("ATS assessment not found.");
+      return row;
+    },
+
+    // ── Role recommendations ────────────────────────────────────────────────
+    async createRoleRecommendation(userId, versionId, result) {
+      await load(versionId, userId);
+      return prisma.resumeRoleRecommendation.create({
+        data: { userId, versionId, roles: result.roles, careerLevel: result.careerLevel ?? null, method: result.method },
+      });
+    },
+
+    async latestRoleRecommendation(userId, versionId) {
+      await load(versionId, userId);
+      return prisma.resumeRoleRecommendation.findFirst({ where: { userId, versionId }, orderBy: { createdAt: "desc" } });
+    },
+
+    async setSelectedRole(id, userId, selectedRole) {
+      const r = await prisma.resumeRoleRecommendation.updateMany({ where: { id, userId }, data: { selectedRole } });
+      if (r.count === 0) throw notFound("Role recommendation not found.");
+      return prisma.resumeRoleRecommendation.findFirst({ where: { id, userId } });
     },
 
     // ── Template preference ─────────────────────────────────────────────────

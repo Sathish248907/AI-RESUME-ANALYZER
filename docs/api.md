@@ -263,3 +263,17 @@ All routes live under `/api/career` and require `Authorization: Bearer <jwt>`; r
 | POST / GET | `/api/career/action-plans/generate` · `/action-plans/current` | |
 | POST / PATCH / DELETE | `/api/career/action-tasks[/:taskId]` | |
 | POST / GET / PATCH / DELETE | `/api/career/coach/conversations[/:id]` · POST `/:id/messages` | AI chat (long budget, AI limiter) |
+
+## Analytics, gamification, goals, reports & notifications (Phase 10)
+
+All routes require `Authorization: Bearer <jwt>`; records are owner-scoped and no endpoint accepts points, XP, unlocks or scores from the client. Full reference in [phase10.md](phase10.md).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/analytics/overview?range=7d|30d|90d|all&tz=` | KPIs with previous-period comparison, all widgets, progress score |
+| GET | `/api/analytics/career-progress` · `/skills` · `/interviews` · `/resume` · `/applications` | `null` = no data, never zero |
+| GET / PATCH | `/api/gamification/profile` | reconciles ledger from records; PATCH accepts only `timezone` |
+| GET | `/api/gamification/points/history` · `/achievements` · `/streaks` · `/activity` · `/rules` | paginated where applicable |
+| GET / POST / PATCH / DELETE | `/api/goals[/:goalId]` | measured goals reject manual `currentValue` (409) |
+| POST / GET | `/api/progress-reports/generate` · `/api/progress-reports[/:reportId]` · `/:reportId/pdf` | AI narrative optional, deterministic fallback |
+| GET / PATCH / POST | `/api/notifications` · `/:notificationId/read` · `/read-all` · `/preferences` | in-app only, de-duplicated |

@@ -88,7 +88,13 @@ export default function CareerCoachDashboardPage() {
       <div className="grid md:grid-cols-3 gap-6">
         <Card><CardHeader><CardTitle className="text-base">Readiness trend</CardTitle></CardHeader><CardContent><ReadinessTrendChart trend={dash.readiness.trend} /></CardContent></Card>
         <Card><CardHeader><CardTitle className="text-base flex items-center gap-1"><Mic className="w-4 h-4 text-pink-600" /> Interview scores</CardTitle></CardHeader><CardContent><InterviewTrendChart trend={dash.interviews.trend} />{dash.interviews.weakTopics.length > 0 && <p className="text-xs text-gray-600 mt-2">Weak: {dash.interviews.weakTopics.join(", ")}</p>}</CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-base flex items-center gap-1"><Briefcase className="w-4 h-4 text-indigo-600" /> Application pipeline</CardTitle></CardHeader><CardContent><PipelineChart byStatus={dash.applications.byStatus} /></CardContent></Card>
+        <Card><CardHeader><CardTitle className="text-base flex items-center gap-1"><Briefcase className="w-4 h-4 text-indigo-600" /> Application pipeline</CardTitle></CardHeader><CardContent>
+          <PipelineChart byStatus={dash.applications.byStatus} />
+          {dash.applications.rates.responseRate !== null ? (
+            <p className="text-xs text-gray-600 mt-2">Response {dash.applications.rates.responseRate}% · interview {dash.applications.rates.interviewRate}% · offer {dash.applications.rates.offerRate}% <span className="text-gray-400">({dash.applications.rates.sampleSize} submitted)</span></p>
+          ) : dash.applications.total > 0 ? <p className="text-[11px] text-gray-400 mt-2">Conversion rates appear after 5 submitted applications ({dash.applications.rates.sampleSize} so far).</p> : null}
+          {dash.applications.closed.length > 0 && <details className="mt-2 text-xs text-gray-600"><summary className="cursor-pointer">Rejected / withdrawn ({dash.applications.closed.length})</summary><ul className="mt-1 space-y-0.5">{dash.applications.closed.map((c) => <li key={c.id}>{c.companyName} — {c.jobTitle} <span className="text-gray-400">({c.status.toLowerCase()}, {formatDate(c.updatedAt)})</span></li>)}</ul></details>}
+        </CardContent></Card>
       </div>
 
       <div className="grid md:grid-cols-3 gap-6">

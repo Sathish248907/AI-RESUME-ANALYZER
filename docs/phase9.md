@@ -53,7 +53,9 @@ cd backend && npx prisma generate && npx prisma migrate deploy
   advanced), practice plan, related roadmap coding tasks, score trend, follow-ups for poor answers.
 - **careerDashboardService.js** — readiness + trend, strengths / priority gaps, resume quality,
   job-match summary, interview trend, roadmap completion, application pipeline + upcoming follow-ups,
-  achievements (last 14 days), next action, plan progress.
+  achievements (last 14 days), next action, plan progress, application response / interview / offer conversion rates
+  (only once ≥ 5 applications have gone past “Interested”; withdrawn excluded) and the rejected /
+  withdrawn history.
 - **careerCoachService.js** (`career-coach-1.0`) — builds compact labelled **RECORDED FACTS** from the
   snapshot (≤ 700 chars each; no resume/JD text, no contact details), sends the last 10 messages plus the
   question fenced in `<user_message>`, validates the reply schema, filters links to an in-app allow-list,

@@ -31,7 +31,12 @@ export function buildCareerDashboard({ snapshot, latestAssessment, recommendatio
   const apps = snapshot.applications ?? [];
   const byStatus = {}; for (const a of apps) byStatus[a.status] = (byStatus[a.status] ?? 0) + 1;
   const upcoming = apps.filter((a) => a.nextFollowUpDate && ACTIVE_STATUSES.includes(a.status) && new Date(a.nextFollowUpDate) <= new Date(now.getTime() + 14 * DAY)).sort((a, b) => new Date(a.nextFollowUpDate) - new Date(b.nextFollowUpDate)).slice(0, 6).map((a) => ({ id: a.id, companyName: a.companyName, jobTitle: a.jobTitle, status: a.status, nextFollowUpDate: a.nextFollowUpDate, overdue: new Date(a.nextFollowUpDate) < now }));
-  const applications = { total: apps.length, active: apps.filter((a) => ACTIVE_STATUSES.includes(a.status)).length, byStatus, interviews: byStatus.INTERVIEW ?? 0, upcoming };
+  // Conversion rates only when there is enough data (≥ 5 applications that went past "interested").
+  const submitted = apps.filter((a) => a.status !== "INTERESTED" && a.status !== "WITHDRAWN");
+  const responded = submitted.filter((a) => ["ASSESSMENT", "INTERVIEW", "OFFER", "REJECTED"].includes(a.status));
+  const interviewed = submitted.filter((a) => ["INTERVIEW", "OFFER"].includes(a.status));
+  const rates = submitted.length >= 5 ? { sampleSize: submitted.length, responseRate: Math.round((responded.length / submitted.length) * 100), interviewRate: Math.round((interviewed.length / submitted.length) * 100), offerRate: Math.round((submitted.filter((a) => a.status === "OFFER").length / submitted.length) * 100), basis: "applications with a status beyond Interested, excluding withdrawn" } : { sampleSize: submitted.length, responseRate: null, interviewRate: null, offerRate: null, basis: "needs at least 5 submitted applications" };
+  const applications = { total: apps.length, active: apps.filter((a) => ACTIVE_STATUSES.includes(a.status)).length, byStatus, interviews: byStatus.INTERVIEW ?? 0, upcoming, rates, closed: apps.filter((a) => ["REJECTED", "WITHDRAWN"].includes(a.status)).map((a) => ({ id: a.id, companyName: a.companyName, jobTitle: a.jobTitle, status: a.status, updatedAt: a.updatedAt })).slice(0, 8) };
 
   const achievements = [];
   const since = now.getTime() - 14 * DAY;

@@ -15,7 +15,7 @@ import { STATUS_LABELS, STATUS_STYLES } from "@/services/jobApplicationService";
 import { getJobAnalysisStats, type JobAnalysisStats } from "@/services/jobAnalysisStorage";
 import { getAnalysisMetas, type StoredAnalysisMeta } from "@/services/analysisStorage";
 import { cn, formatDate, getScoreColor } from "@/lib/utils";
-import { BarChart3, FileText, TrendingUp, Target, ArrowRight, PlusCircle, Briefcase, Star, FolderSearch, SearchCode, Layers, LogIn, Bot, FlaskConical, Bell, Lightbulb, Mic, Upload, BookOpen, LineChart, Map, PenSquare, Compass } from "lucide-react";
+import { BarChart3, FileText, TrendingUp, Target, ArrowRight, PlusCircle, Briefcase, Star, FolderSearch, SearchCode, Layers, LogIn, Bot, FlaskConical, Bell, Lightbulb, Mic, Upload, BookOpen, LineChart, Map, PenSquare, Compass, Trophy } from "lucide-react";
 
 export default function DashboardPage() {
   const { user, ready } = useAuth();
@@ -219,6 +219,7 @@ export default function DashboardPage() {
             <Link href="/dashboard/learning" className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700"><Map className="w-4 h-4" /> Learning roadmap</Link>
             <Link href="/dashboard/resume-builder" className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50"><PenSquare className="w-4 h-4" /> Resume builder</Link>
             <Link href="/dashboard/career" className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-xl hover:bg-indigo-100"><Compass className="w-4 h-4" /> Career coach</Link>
+            <Link href="/dashboard/progress" className="inline-flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl hover:bg-amber-100"><Trophy className="w-4 h-4" /> Progress &amp; achievements</Link>
           </div>
         </>
       )}

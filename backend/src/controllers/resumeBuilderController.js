@@ -3,17 +3,21 @@ import { ApiError, badRequest } from "../utils/errors.js";
 import { pageMeta } from "../validators/common.js";
 import { logger } from "../utils/logger.js";
 import { sanitizeShortText } from "../utils/sanitize.js";
-import { TEMPLATES, DEFAULT_FORMATTING, emptyContent, normaliseContent, normaliseFormatting, applyTextField, readTextField, contentToPlainText } from "../services/resumeBuilder/resumeContentSchema.js";
+import { TEMPLATES, TEMPLATE_SECTION_ORDER, DEFAULT_FORMATTING, emptyContent, normaliseContent, normaliseFormatting, orderSectionsForTemplate, applyTextField, readTextField, contentToPlainText } from "../services/resumeBuilder/resumeContentSchema.js";
 import { structureHeuristically, structureWithAi } from "../services/resumeBuilder/resumeStructureService.js";
-import { generateImprovements, generateTailoring } from "../services/resumeBuilder/resumeImprovementService.js";
+import { generateImprovements, generateTailoring, regenerateSuggestion, suggestionGroup } from "../services/resumeBuilder/resumeImprovementService.js";
 import { runQualityChecks, keywordsFromText } from "../services/resumeBuilder/resumeQualityService.js";
 import { compareContents, describeChanges } from "../services/resumeBuilder/resumeDiffService.js";
 import { renderResumePdf, safeFileName } from "../services/resumeBuilder/resumePdfService.js";
+import { scoreAtsReadiness } from "../services/resumeBuilder/atsScoringService.js";
+import { runValidation, applyAutoFix, AUTO_FIXES } from "../services/resumeBuilder/resumeValidationService.js";
+import { recommendRoles, findRole } from "../services/resumeBuilder/roleRecommendationService.js";
+import { askAssistant, ASSISTANT_INTENTS } from "../services/resumeBuilder/resumeAssistantService.js";
 
 /**
- * @param {{ repo, resumeRepo, jobDescriptionRepo, analysisRepo, getLlm: Function }} deps
+ * @param {{ repo, resumeRepo, jobDescriptionRepo, analysisRepo, careerRepo, learningRepo, getLlm: Function }} deps
  */
-export function createResumeBuilderController({ repo, resumeRepo, jobDescriptionRepo, analysisRepo, getLlm }) {
+export function createResumeBuilderController({ repo, resumeRepo, jobDescriptionRepo, analysisRepo, careerRepo, learningRepo, getLlm }) {
   const view = (v) => ({
     id: v.id, resumeId: v.resumeId, resume: v.resume ?? null, jobDescriptionId: v.jobDescriptionId, jobDescription: v.jobDescription ?? null, parentVersionId: v.parentVersionId,
     name: v.name, versionNumber: v.versionNumber, kind: v.kind, isOriginal: v.isOriginal, templateId: v.templateId, content: v.content, formatting: v.formatting, contentSource: v.contentSource,
@@ -46,9 +50,42 @@ export function createResumeBuilderController({ repo, resumeRepo, jobDescription
     return { jd, text, skills, analysis, jobTitle: jd?.jobTitle ?? jobTitle ?? null, companyName: jd?.companyName ?? companyName ?? null };
   }
 
+  /**
+   * Build the options for scoreAtsReadiness: job context when the request (or
+   * the version) has one, the user's target role otherwise, plus this version's
+   * formatting so the parsing checks reflect what would actually be exported.
+   */
+  async function atsOptions(userId, version, body = {}) {
+    const hasJobInput = Boolean(body.jobDescriptionId || body.jobDescription || body.analysisId);
+    const ctx = hasJobInput || version.jobDescriptionId
+      ? await jobContext(userId, hasJobInput ? body : { jobDescriptionId: version.jobDescriptionId })
+      : { jd: null, text: undefined, skills: [], jobTitle: null };
+
+    let targetRole = body.targetRole ?? null;
+    if (!targetRole && !ctx.text && careerRepo) {
+      targetRole = (await careerRepo.getProfile(userId).catch(() => null))?.targetRoles?.[0] ?? null;
+    }
+    return {
+      jd: ctx.jd,
+      options: {
+        jobSkills: ctx.skills ?? [],
+        jobDescriptionText: ctx.text ?? "",
+        jobTitle: ctx.jobTitle ?? version.targetJobTitle ?? null,
+        targetRole,
+        formatting: version.formatting ?? {},
+        templateId: version.templateId,
+        weights: body.weights ?? {},
+      },
+    };
+  }
+
   return {
     templates(_req, res) {
-      res.json({ templates: TEMPLATES, defaultFormatting: DEFAULT_FORMATTING });
+      res.json({
+        templates: TEMPLATES.map((t) => ({ ...t, sectionOrder: TEMPLATE_SECTION_ORDER[t.id] ?? null })),
+        defaultFormatting: DEFAULT_FORMATTING,
+        atsNote: "Every template is single-column, text-only and uses standard PDF fonts, so all of them are parseable. The ones marked ATS-safe additionally drop colour and decorative rules. Applicant tracking systems differ and none publish their parsers, so no template can be guaranteed to work with all of them.",
+      });
     },
 
     async preference(req, res, next) {
@@ -211,7 +248,21 @@ export function createResumeBuilderController({ repo, resumeRepo, jobDescription
     },
 
     async listImprovements(req, res, next) {
-      try { res.json({ suggestions: await repo.listImprovements(req.params.versionId, req.user.id, req.query) }); } catch (err) { next(err); }
+      try {
+        const v = await repo.findVersion(req.params.versionId, req.user.id);
+        const rows = await repo.listImprovements(v.id, req.user.id, req.query);
+        // Rows written before the presentation columns existed get their group and
+        // priority derived here, so every card renders the same way.
+        const content = normaliseContent(v.content);
+        const suggestions = rows.map((s) => ({
+          ...s,
+          suggestionGroup: s.suggestionGroup ?? suggestionGroup(content, { sectionId: s.sectionId, category: s.category }),
+          priority: s.priority ?? "medium",
+        }));
+        const counts = {};
+        for (const s of suggestions) if (s.status === "pending") counts[s.suggestionGroup] = (counts[s.suggestionGroup] ?? 0) + 1;
+        res.json({ suggestions, pendingByGroup: counts });
+      } catch (err) { next(err); }
     },
 
     /** POST /versions/:id/improvements/:improvementId — accept / reject / edit / reset one suggestion. Accepting writes into the content. */
@@ -283,6 +334,243 @@ export function createResumeBuilderController({ repo, resumeRepo, jobDescription
         res.setHeader("X-Resume-Pages", String(pages));
         res.setHeader("Cache-Control", "no-store");
         res.end(buffer);
+      } catch (err) { next(err); }
+    },
+
+    // ── Phase 11: ATS readiness ──────────────────────────────────────────────
+    /**
+     * POST /versions/:id/ats-check — deterministic ATS-readiness score.
+     * With a job description the result is job-specific; without one it is
+     * general readiness and the keyword category is dropped, not guessed.
+     */
+    async atsCheck(req, res, next) {
+      try {
+        const v = await repo.findVersion(req.params.versionId, req.user.id);
+        const { options, jd } = await atsOptions(req.user.id, v, req.body);
+        const assessment = scoreAtsReadiness(normaliseContent(v.content), options);
+        const previous = (await repo.listAtsAssessments(req.user.id, { versionId: v.id, mode: assessment.mode, limit: 1 }))[0] ?? null;
+        let saved = null;
+        if (req.body.save !== false) {
+          saved = await repo.createAtsAssessment(req.user.id, v.id, assessment, { jobDescriptionId: jd?.id ?? null });
+        }
+        // Keep the Phase 8 quality score fresh too, so the two panels never disagree.
+        const quality = runQualityChecks(normaliseContent(v.content));
+        if (quality.overall !== v.lastQualityScore) await repo.updateVersion(v.id, req.user.id, { lastQualityScore: quality.overall });
+        res.json({
+          ats: assessment,
+          assessmentId: saved?.id ?? null,
+          previous: previous ? { id: previous.id, overallScore: previous.overallScore, label: previous.label, createdAt: previous.createdAt } : null,
+          delta: previous ? assessment.overall - previous.overallScore : null,
+          quality: { overall: quality.overall, label: quality.label, method: quality.method },
+          scoreGuide: "ATS readiness and the Phase 8 quality score measure different things: readiness is about completeness, structure and job alignment, quality is about how the document is written. Neither is a job-match percentage.",
+          versionId: v.id,
+          jobDescriptionId: jd?.id ?? null,
+        });
+      } catch (err) { next(err); }
+    },
+
+    /** GET /versions/:id/ats-history — past assessments, newest first, by mode. */
+    async atsHistory(req, res, next) {
+      try {
+        const v = await repo.findVersion(req.params.versionId, req.user.id);
+        const items = await repo.listAtsAssessments(req.user.id, { versionId: v.id, mode: req.query.mode, limit: req.query.limit });
+        const series = (mode) => items.filter((i) => i.mode === mode).map((i) => ({ at: i.createdAt, score: i.overallScore })).reverse();
+        res.json({
+          versionId: v.id,
+          assessments: items,
+          trend: { general: series("general"), job: series("job") },
+          note: "General and job-specific runs are separate series — a job-specific score is not comparable with a general one, or with a score for a different job.",
+        });
+      } catch (err) { next(err); }
+    },
+
+    // ── Phase 11: validation and safe fixes ──────────────────────────────────
+    /** POST /versions/:id/validate — document checks, inline-addressable. */
+    async validate(req, res, next) {
+      try {
+        const v = await repo.findVersion(req.params.versionId, req.user.id);
+        const content = normaliseContent(v.content);
+        const jdId = req.body.jobDescriptionId ?? v.jobDescriptionId;
+        let jobKeywords = [];
+        if (jdId) {
+          const jd = await jobDescriptionRepo.findByIdForUser(jdId, req.user.id);
+          jobKeywords = (jd.extractedRequirements?.skills ?? []).map((s) => s.name);
+          if (!jobKeywords.length) jobKeywords = keywordsFromText(jd.description);
+        }
+        res.json({ validation: runValidation(content, { jobKeywords, targetRole: req.body.targetRole, formatting: v.formatting, templateId: v.templateId }), versionId: v.id, jobDescriptionId: jdId ?? null });
+      } catch (err) { next(err); }
+    },
+
+    /**
+     * POST /versions/:id/apply-fix — apply one safe, mechanical fix and report
+     * the real score change. A fix that turns out to be a no-op writes nothing.
+     */
+    async applyFix(req, res, next) {
+      try {
+        const v = await repo.findVersion(req.params.versionId, req.user.id);
+        if (v.isOriginal) throw new ApiError(409, "The original version is read-only. Duplicate it first.", { code: "ORIGINAL_READONLY" });
+        const { options } = await atsOptions(req.user.id, v, {});
+        const result = applyAutoFix(normaliseContent(v.content), req.body.kind, { sectionId: req.body.sectionId, value: req.body.value }, options);
+        if (!result.ok) throw badRequest(result.reason);
+        if (!result.changed) {
+          return res.json({ changed: false, summary: result.summary, version: view(v), scoreBefore: null, scoreAfter: null, fix: { kind: req.body.kind, label: AUTO_FIXES[req.body.kind].label, description: AUTO_FIXES[req.body.kind].description } });
+        }
+        const updated = await repo.updateVersion(v.id, req.user.id, { content: result.content, lastQualityScore: runQualityChecks(result.content).overall });
+        logger.info("resume auto-fix applied", { versionId: v.id, kind: req.body.kind, scoreBefore: result.scoreBefore, scoreAfter: result.scoreAfter });
+        res.json({
+          changed: true, summary: result.summary, version: view(updated),
+          scoreBefore: result.scoreBefore, scoreAfter: result.scoreAfter,
+          fix: { kind: req.body.kind, label: AUTO_FIXES[req.body.kind].label, description: AUTO_FIXES[req.body.kind].description },
+        });
+      } catch (err) { next(err); }
+    },
+
+    // ── Phase 11: role recommendations ───────────────────────────────────────
+    /** POST /versions/:id/role-recommendations — evidence-based role suitability. */
+    async roleRecommendations(req, res, next) {
+      try {
+        const v = await repo.findVersion(req.params.versionId, req.user.id);
+        const [profile, skillGaps] = await Promise.all([
+          careerRepo?.getProfile(req.user.id).catch(() => null) ?? null,
+          learningRepo?.listSkillGaps(req.user.id).catch(() => []) ?? [],
+        ]);
+        const learningSkills = (skillGaps ?? [])
+          .filter((g) => ["learning_in_progress", "needs_improvement"].includes(g.proficiencyStatus))
+          .map((g) => ({ skillName: g.skillName, proficiencyStatus: g.proficiencyStatus }));
+        const result = recommendRoles(normaliseContent(v.content), { profile, learningSkills, limit: req.body.limit });
+        let saved = null;
+        if (req.body.save !== false) saved = await repo.createRoleRecommendation(req.user.id, v.id, result);
+        res.json({
+          ...result,
+          recommendationId: saved?.id ?? null,
+          versionId: v.id,
+          currentTargetRoles: profile?.targetRoles ?? [],
+          inputsUsed: {
+            resumeContent: true,
+            careerProfile: Boolean(profile),
+            learningProgress: learningSkills.length > 0,
+            note: learningSkills.length
+              ? `${learningSkills.length} skill${learningSkills.length === 1 ? "" : "s"} you are currently learning are shown as in progress and are not counted as demonstrated experience.`
+              : "No in-progress learning found, so scores rest on the resume alone.",
+          },
+        });
+      } catch (err) { next(err); }
+    },
+
+    /**
+     * POST /versions/:id/target-role — adopt a recommended role.
+     * Adds it to the career profile's target roles (the authoritative list) and
+     * optionally applies the role's template and section order to this version.
+     */
+    async selectTargetRole(req, res, next) {
+      try {
+        const v = await repo.findVersion(req.params.versionId, req.user.id);
+        const role = findRole(req.body.role);
+        if (!role) throw badRequest(`“${req.body.role}” is not one of the recommended roles.`);
+        if (!careerRepo) throw new ApiError(503, "The career profile service is unavailable.", { code: "CAREER_UNAVAILABLE" });
+
+        const profile = await careerRepo.getProfile(req.user.id);
+        const existing = Array.isArray(profile?.targetRoles) ? profile.targetRoles : [];
+        const targetRoles = existing.some((r) => String(r).toLowerCase() === role.title.toLowerCase())
+          ? [role.title, ...existing.filter((r) => String(r).toLowerCase() !== role.title.toLowerCase())]
+          : [role.title, ...existing].slice(0, 5);
+        const saved = await careerRepo.upsertProfile(req.user.id, profile
+          ? { targetRoles }
+          : { targetRoles, careerLevel: "fresher", industries: [], skills: [], locations: [], learningInterests: [] });
+
+        if (req.body.recommendationId) await repo.setSelectedRole(req.body.recommendationId, req.user.id, role.title).catch(() => null);
+
+        let version = v;
+        if ((req.body.applyTemplate || req.body.applySectionOrder) && !v.isOriginal) {
+          const data = {};
+          if (req.body.applyTemplate) {
+            data.templateId = role.templateId;
+            data.formatting = normaliseFormatting({ ...(v.formatting ?? {}), ...(TEMPLATES.find((t) => t.id === role.templateId)?.defaults ?? {}) }, role.templateId);
+          }
+          if (req.body.applySectionOrder) {
+            const content = normaliseContent(v.content);
+            const rank = (s) => { const i = role.sectionOrder.indexOf(s.type); return i === -1 ? role.sectionOrder.length : i; };
+            data.content = { ...content, sections: [...content.sections].map((s, i) => ({ s, i })).sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i).map((x) => x.s) };
+          }
+          version = await repo.updateVersion(v.id, req.user.id, data);
+        }
+        res.json({
+          targetRole: role.title,
+          targetRoles: saved.targetRoles,
+          version: view(version),
+          applied: { template: Boolean(req.body.applyTemplate) && !v.isOriginal, sectionOrder: Boolean(req.body.applySectionOrder) && !v.isOriginal },
+          readOnlySkipped: v.isOriginal && (req.body.applyTemplate || req.body.applySectionOrder)
+            ? "The original version is read-only, so the template and section order were not changed. Duplicate it to apply them."
+            : null,
+        });
+      } catch (err) { next(err); }
+    },
+
+    // ── Phase 11: writing assistant ──────────────────────────────────────────
+    /**
+     * POST /versions/:id/assistant — scoped writing help. Returns drafts the
+     * user may insert; nothing is written to the resume by this endpoint.
+     */
+    async assistant(req, res, next) {
+      try {
+        const v = await repo.findVersion(req.params.versionId, req.user.id);
+        let jobDescription = null, jobTitle = null;
+        const jdId = req.body.jobDescriptionId ?? v.jobDescriptionId;
+        if (jdId) { const jd = await jobDescriptionRepo.findByIdForUser(jdId, req.user.id); jobDescription = jd.description; jobTitle = jd.jobTitle; }
+        let targetRole = req.body.targetRole ?? v.targetJobTitle ?? null;
+        if (!targetRole && careerRepo) targetRole = (await careerRepo.getProfile(req.user.id).catch(() => null))?.targetRoles?.[0] ?? null;
+
+        const out = await askAssistant(getLlm(), {
+          content: normaliseContent(v.content),
+          intent: req.body.intent,
+          question: req.body.question,
+          sectionId: req.body.sectionId,
+          entryId: req.body.entryId,
+          field: req.body.field,
+          targetRole,
+          jobDescription,
+          jobTitle,
+          history: req.body.history,
+        });
+        logger.info("resume assistant answered", { versionId: v.id, intent: req.body.intent, drafts: out.drafts.length });
+        res.json({ ...out, versionId: v.id, intents: Object.entries(ASSISTANT_INTENTS).map(([key, s]) => ({ key, label: s.label, sectionTypes: s.sectionTypes })) });
+      } catch (err) { next(err); }
+    },
+
+    /**
+     * POST /versions/:id/improvements/:improvementId/regenerate — a different
+     * take on the same field. The old suggestion is replaced in place and its
+     * regeneration count goes up, so the user can see they have asked twice.
+     */
+    async regenerate(req, res, next) {
+      try {
+        const v = await repo.findVersion(req.params.versionId, req.user.id);
+        const imp = await repo.getImprovement(req.params.improvementId, req.user.id);
+        if (imp.versionId !== v.id) throw badRequest("This suggestion belongs to another version.");
+        if (imp.status !== "pending") throw new ApiError(409, "That suggestion has already been resolved. Reset it first if you want another take.", { code: "ALREADY_RESOLVED" });
+
+        let jobDescription = null, jobTitle = null;
+        if (imp.mode === "tailor" && v.jobDescriptionId) {
+          const jd = await jobDescriptionRepo.findByIdForUser(v.jobDescriptionId, req.user.id);
+          jobDescription = jd.description; jobTitle = jd.jobTitle;
+        }
+        const content = normaliseContent(v.content);
+        const out = await regenerateSuggestion(getLlm(), {
+          content,
+          target: { sectionId: imp.sectionId, entryId: imp.entryId, field: imp.field },
+          previousSuggestion: imp.suggestedText,
+          userInstruction: req.body.instruction,
+          mode: imp.mode,
+          jobDescription, jobTitle,
+        });
+        const s = out.suggestion;
+        const row = await repo.updateImprovement(imp.id, {
+          category: s.category, suggestionGroup: s.group, priority: s.priority, title: s.title, issue: s.issue, benefit: s.benefit,
+          originalText: s.originalText, suggestedText: s.suggestedText, rationale: s.rationale,
+          needsConfirmation: s.needsConfirmation, confirmationQuestion: s.confirmationQuestion,
+          regenerationCount: (imp.regenerationCount ?? 0) + 1,
+        });
+        res.json({ suggestion: row, previousSuggestedText: imp.suggestedText, provider: out.provider, model: out.model });
       } catch (err) { next(err); }
     },
 

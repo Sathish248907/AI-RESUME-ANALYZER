@@ -19,22 +19,32 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  analyses          Analysis[]
-  resumes           Resume[]
-  jobDescriptions   JobDescription[]
-  applications      JobApplication[]
-  interviewSessions InterviewSession[]
-  roadmaps          LearningRoadmap[]
-  skillGaps         SkillGap[]
-  dismissals        RecommendationDismissal[]
-  resumeVersions    ResumeVersion[]
-  templatePreference ResumeTemplatePreference?
-  careerProfile     CareerProfile?
-  careerAssessments CareerAssessment[]
+  analyses              Analysis[]
+  resumes               Resume[]
+  jobDescriptions       JobDescription[]
+  applications          JobApplication[]
+  interviewSessions     InterviewSession[]
+  roadmaps              LearningRoadmap[]
+  skillGaps             SkillGap[]
+  dismissals            RecommendationDismissal[]
+  resumeVersions        ResumeVersion[]
+  templatePreference    ResumeTemplatePreference?
+  atsAssessments        ResumeAtsAssessment[]
+  roleRecommendations   ResumeRoleRecommendation[]
+  careerProfile         CareerProfile?
+  careerAssessments     CareerAssessment[]
   careerRecommendations CareerRecommendation[]
-  careerActionPlans CareerActionPlan[]
-  careerActionTasks CareerActionTask[]
-  coachConversations CareerCoachConversation[]
+  careerActionPlans     CareerActionPlan[]
+  careerActionTasks     CareerActionTask[]
+  coachConversations    CareerCoachConversation[]
+  progressSnapshots     CareerProgressSnapshot[]
+  gamificationProfile   GamificationProfile?
+  pointTransactions     PointTransaction[]
+  achievements          UserAchievement[]
+  goals                 UserGoal[]
+  activityEvents        ActivityEvent[]
+  progressReports       ProgressReport[]
+  notifications         UserNotification[]
 
   @@map("api_users")
 }
@@ -81,10 +91,11 @@ model JobDescription {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  analyses     Analysis[]
-  applications JobApplication[]
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analyses       Analysis[]
+  applications   JobApplication[]
   resumeVersions ResumeVersion[]
+  atsAssessments ResumeAtsAssessment[]
 
   @@index([userId, createdAt])
   @@index([userId, targetRole])
@@ -115,10 +126,10 @@ model Analysis {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  resume         Resume?         @relation(fields: [resumeId], references: [id], onDelete: SetNull)
-  jobDescriptionRef JobDescription? @relation(fields: [jobDescriptionId], references: [id], onDelete: SetNull)
-  applications   JobApplication[]
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume            Resume?          @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  jobDescriptionRef JobDescription?  @relation(fields: [jobDescriptionId], references: [id], onDelete: SetNull)
+  applications      JobApplication[]
 
   @@index([userId, createdAt])
   @@index([userId, matchScore])
@@ -214,7 +225,7 @@ model InterviewQuestion {
   category             String
   topic                String
   difficulty           String
-  questionType         String   // conceptual | technical | project | scenario | behavioral | coding
+  questionType         String // conceptual | technical | project | scenario | behavioral | coding
   evaluationCriteria   Json
   suggestedTimeSeconds Int      @default(180)
   createdAt            DateTime @default(now())
@@ -256,31 +267,31 @@ model InterviewAnswer {
 /// A generated learning plan. Regeneration creates a new version row and marks the
 /// previous one `superseded` (its id is kept in previousVersionId for history).
 model LearningRoadmap {
-  id                       String    @id @default(cuid())
-  userId                   String
-  targetRole               String
-  title                    String
-  objective                String    // job_readiness | interview_prep | project_development | skill_improvement
-  currentSkillLevel        String    // beginner | intermediate | advanced
-  weeklyStudyHours         Int
-  preferredSchedule        String    @default("flexible") // weekdays | weekends | flexible
-  preferredFormat          String    @default("mixed")    // documentation | tutorials | exercises | projects | mixed
-  targetCompletionDate     DateTime?
-  estimatedHours           Int       @default(0)
-  estimatedWeeks           Int       @default(0)
-  status                   String    @default("active") // active | archived | superseded
-  version                  Int       @default(1)
-  previousVersionId        String?
-  changeSummary            Json?
-  skillGapSummary          Json?
-  sourceResumeId           String?
-  sourceJobDescriptionId   String?
-  sourceAnalysisId         String?
+  id                        String    @id @default(cuid())
+  userId                    String
+  targetRole                String
+  title                     String
+  objective                 String // job_readiness | interview_prep | project_development | skill_improvement
+  currentSkillLevel         String // beginner | intermediate | advanced
+  weeklyStudyHours          Int
+  preferredSchedule         String    @default("flexible") // weekdays | weekends | flexible
+  preferredFormat           String    @default("mixed") // documentation | tutorials | exercises | projects | mixed
+  targetCompletionDate      DateTime?
+  estimatedHours            Int       @default(0)
+  estimatedWeeks            Int       @default(0)
+  status                    String    @default("active") // active | archived | superseded
+  version                   Int       @default(1)
+  previousVersionId         String?
+  changeSummary             Json?
+  skillGapSummary           Json?
+  sourceResumeId            String?
+  sourceJobDescriptionId    String?
+  sourceAnalysisId          String?
   sourceInterviewSessionIds Json?
-  provider                 String?
-  model                    String?
-  createdAt                DateTime  @default(now())
-  updatedAt                DateTime  @updatedAt
+  provider                  String?
+  model                     String?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
   user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   milestones RoadmapMilestone[]
@@ -297,11 +308,11 @@ model RoadmapMilestone {
   sequenceNumber        Int
   title                 String
   description           String    @db.Text
-  requiredSkills        Json      // string[]
-  learningObjectives    Json      // string[]
+  requiredSkills        Json // string[]
+  learningObjectives    Json // string[]
   estimatedHours        Int       @default(0)
   /// sequenceNumbers of milestones that must be completed first (validated to reference earlier milestones)
-  prerequisiteSequences Json      // number[]
+  prerequisiteSequences Json // number[]
   completionCriteria    String    @db.Text
   status                String    @default("not_started") // locked | not_started | in_progress | completed
   completedAt           DateTime?
@@ -323,7 +334,7 @@ model LearningTask {
   title              String
   description        String    @db.Text
   skillName          String
-  taskType           String    // learn_concept | read_docs | tutorial | coding_exercise | mini_project | review_interview_questions | explain_concept | knowledge_checkpoint
+  taskType           String // learn_concept | read_docs | tutorial | coding_exercise | mini_project | review_interview_questions | explain_concept | knowledge_checkpoint
   difficulty         String    @default("intermediate")
   estimatedMinutes   Int       @default(30)
   isRequired         Boolean   @default(true)
@@ -335,7 +346,7 @@ model LearningTask {
   /// For knowledge_checkpoint tasks: { id, type: mcq|conceptual|coding|project|checklist, passScore?, questions?[...], items?[...] }.
   /// Correct answers are stripped before being sent to the client until an attempt is submitted.
   checkpoint         Json?
-  checkpointAttempts Json?     // attempt history [{ at, score, passed, answers }]
+  checkpointAttempts Json? // attempt history [{ at, score, passed, answers }]
   startedAt          DateTime?
   completedAt        DateTime?
   createdAt          DateTime  @default(now())
@@ -356,7 +367,7 @@ model LearningResource {
   id           String   @id @default(cuid())
   taskId       String
   title        String
-  resourceType String   // official_docs | tutorial | video_course | practice_platform | project_example | interview_prep | search_suggestion
+  resourceType String // official_docs | tutorial | video_course | practice_platform | project_example | interview_prep | search_suggestion
   url          String?
   urlVerified  Boolean  @default(false)
   provider     String   @default("third_party") // official | third_party | search
@@ -378,14 +389,14 @@ model SkillGap {
   roadmapId         String?
   skillName         String
   category          String
-  proficiencyStatus String    // demonstrated | needs_improvement | not_demonstrated | not_assessed | learning_in_progress
-  priority          String    // high | medium | low
+  proficiencyStatus String // demonstrated | needs_improvement | not_demonstrated | not_assessed | learning_in_progress
+  priority          String // high | medium | low
   priorityScore     Int       @default(0)
-  evidenceSources   Json      // string[]
+  evidenceSources   Json // string[]
   explanation       String    @db.Text
   whyItMatters      String    @db.Text
   targetProficiency String    @default("working")
-  relatedTopics     Json?     // string[]
+  relatedTopics     Json? // string[]
   userConfirmed     Boolean   @default(false)
   userNote          String?
   lastAssessedAt    DateTime?
@@ -438,10 +449,12 @@ model ResumeVersion {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  resume         Resume?         @relation(fields: [resumeId], references: [id], onDelete: SetNull)
-  jobDescription JobDescription? @relation(fields: [jobDescriptionId], references: [id], onDelete: SetNull)
-  improvements   ResumeImprovement[]
+  user                User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume              Resume?                    @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  jobDescription      JobDescription?            @relation(fields: [jobDescriptionId], references: [id], onDelete: SetNull)
+  improvements        ResumeImprovement[]
+  atsAssessments      ResumeAtsAssessment[]
+  roleRecommendations ResumeRoleRecommendation[]
 
   @@index([userId, updatedAt])
   @@index([resumeId, versionNumber])
@@ -451,23 +464,33 @@ model ResumeVersion {
 /// One AI suggestion for one field. Suggestions are stored separately from the
 /// resume content and only reach the content when the user accepts them.
 model ResumeImprovement {
-  id            String   @id @default(cuid())
-  versionId     String
-  batchId       String
-  mode          String   // improve | tailor
-  sectionId     String
-  entryId       String?
-  field         String   // summary | bullet:<index> | title | skills | ...
-  category      String   // clarity | impact | grammar | keywords | structure | relevance
-  originalText  String   @db.Text
-  suggestedText String   @db.Text
-  rationale     String   @db.Text
-  needsConfirmation Boolean @default(false)
+  id                   String    @id @default(cuid())
+  versionId            String
+  batchId              String
+  mode                 String // improve | tailor
+  sectionId            String
+  entryId              String?
+  field                String // summary | bullet:<index> | title | skills | ...
+  category             String // clarity | impact | grammar | keywords | structure | relevance
+  /// Which panel group the suggestion belongs to: summary | skills | experience |
+  /// projects | education | achievements | keywords | grammar | formatting | ats.
+  suggestionGroup      String?
+  priority             String    @default("medium") // high | medium | low
+  /// Card presentation, supplied by the model and backfilled deterministically.
+  title                String?
+  issue                String?   @db.Text
+  benefit              String?   @db.Text
+  originalText         String    @db.Text
+  suggestedText        String    @db.Text
+  rationale            String    @db.Text
+  needsConfirmation    Boolean   @default(false)
   confirmationQuestion String?
-  status        String   @default("pending") // pending | accepted | rejected | edited
-  acceptedText  String?  @db.Text
-  resolvedAt    DateTime?
-  createdAt     DateTime @default(now())
+  status               String    @default("pending") // pending | accepted | rejected | edited
+  acceptedText         String?   @db.Text
+  /// How many times the user asked for a different take on this field.
+  regenerationCount    Int       @default(0)
+  resolvedAt           DateTime?
+  createdAt            DateTime  @default(now())
 
   version ResumeVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
 
@@ -489,6 +512,66 @@ model ResumeTemplatePreference {
   @@map("api_resume_template_preferences")
 }
 
+/// A point-in-time ATS-readiness assessment of one resume version, kept so the
+/// user can see whether their edits actually moved the score. The breakdown is
+/// stored with it because the weights are configurable: a historical score must
+/// stay explainable by the model that produced it, not by today's weights.
+/// `mode` distinguishes a general assessment from one scored against a job, so
+/// the two are never plotted as one series.
+model ResumeAtsAssessment {
+  id               String   @id @default(cuid())
+  userId           String
+  versionId        String
+  jobDescriptionId String?
+  mode             String // general | job
+  overallScore     Int
+  label            String
+  jobTitle         String?
+  targetRole       String?
+  templateId       String?
+  /// Per-category scores, weights and explanations as returned at the time.
+  categories       Json
+  /// The findings and ordered action plan for this run.
+  findings         Json
+  keywordCoverage  Json?
+  skills           Json?
+  weights          Json
+  method           String
+  createdAt        DateTime @default(now())
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version        ResumeVersion   @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  jobDescription JobDescription? @relation(fields: [jobDescriptionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([versionId, mode, createdAt])
+  @@map("api_resume_ats_assessments")
+}
+
+/// A role-suitability run for one resume version. Stored so the "Recommended
+/// roles" panel does not have to recompute on every page load, and so choosing
+/// a target role is auditable: `selectedRole` records which role the user
+/// adopted from this run. The authoritative list of target roles stays on
+/// CareerProfile — this is a record of the recommendation, not a second source.
+model ResumeRoleRecommendation {
+  id           String   @id @default(cuid())
+  userId       String
+  versionId    String
+  /// The full scored role cards, including the evidence each score came from.
+  roles        Json
+  careerLevel  String?
+  selectedRole String?
+  method       String
+  createdAt    DateTime @default(now())
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version ResumeVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([versionId, createdAt])
+  @@map("api_resume_role_recommendations")
+}
+
 // ─── Phase 9: career coach ─────────────────────────────────────────────────
 
 /// What the user tells us about their goals. Nothing here is inferred.
@@ -496,16 +579,16 @@ model CareerProfile {
   id                String   @id @default(cuid())
   userId            String   @unique
   careerLevel       String   @default("fresher") // student | fresher | junior | mid | experienced
-  targetRoles       Json     // string[]
-  industries        Json     // string[]
-  skills            Json     // string[] — self-declared, kept separate from evidence-based skill gaps
-  locations         Json     // string[]
+  targetRoles       Json // string[]
+  industries        Json // string[]
+  skills            Json // string[] — self-declared, kept separate from evidence-based skill gaps
+  locations         Json // string[]
   workMode          String   @default("any") // remote | hybrid | onsite | any
   salaryMin         Int?
   salaryMax         Int?
   salaryCurrency    String?
   goals             String?  @db.Text
-  learningInterests Json     // string[]
+  learningInterests Json // string[]
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -521,13 +604,13 @@ model CareerAssessment {
   targetRole      String
   overallScore    Int
   readinessLabel  String
-  components      Json     // [{ key, label, weight, score, evidence[], missing[] }]
-  skills          Json     // [{ skillName, status, score, evidence[] }]
-  strengths       Json     // string[]
-  improvements    Json     // string[]
-  missingEvidence Json     // string[]
-  nextActions     Json     // [{ title, href, reason }]
-  sources         Json     // { resumes, analyses, interviews, roadmaps, applications, versions }
+  components      Json // [{ key, label, weight, score, evidence[], missing[] }]
+  skills          Json // [{ skillName, status, score, evidence[] }]
+  strengths       Json // string[]
+  improvements    Json // string[]
+  missingEvidence Json // string[]
+  nextActions     Json // [{ title, href, reason }]
+  sources         Json // { resumes, analyses, interviews, roadmaps, applications, versions }
   method          String
   createdAt       DateTime @default(now())
 
@@ -541,22 +624,22 @@ model CareerAssessment {
 
 /// Evidence-backed recommendation with completion state. `key` is stable so regeneration updates instead of duplicating.
 model CareerRecommendation {
-  id             String   @id @default(cuid())
-  userId         String
-  assessmentId   String?
-  key            String
-  type           String   // resume | interview | learning | project | application | skill | profile
-  title          String
-  explanation    String   @db.Text
-  reason         String   @db.Text
-  evidence       Json     // string[]
-  priority       String   @default("medium") // high | medium | low
-  effortMinutes  Int?
-  href           String
-  status         String   @default("open") // open | done | dismissed
-  completedAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String    @id @default(cuid())
+  userId        String
+  assessmentId  String?
+  key           String
+  type          String // resume | interview | learning | project | application | skill | profile
+  title         String
+  explanation   String    @db.Text
+  reason        String    @db.Text
+  evidence      Json // string[]
+  priority      String    @default("medium") // high | medium | low
+  effortMinutes Int?
+  href          String
+  status        String    @default("open") // open | done | dismissed
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   assessment CareerAssessment? @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
@@ -573,7 +656,7 @@ model CareerActionPlan {
   weekEnd     DateTime
   status      String   @default("active") // active | archived
   targetRole  String?
-  summary     Json     // { totalMinutes, byCategory, sources }
+  summary     Json // { totalMinutes, byCategory, sources }
   generatedAt DateTime @default(now())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -592,12 +675,12 @@ model CareerActionTask {
   userId           String
   title            String
   description      String?   @db.Text
-  category         String    // learning | interview | resume | application | personal
+  category         String // learning | interview | resume | application | personal
   href             String?
   estimatedMinutes Int       @default(30)
   dueDate          DateTime?
   isOptional       Boolean   @default(false)
-  sourceKey        String?   // recommendation key / roadmap task id / application id — prevents duplicates across regenerations
+  sourceKey        String? // recommendation key / roadmap task id / application id — prevents duplicates across regenerations
   status           String    @default("pending") // pending | done | skipped
   completedAt      DateTime?
   notes            String?
@@ -629,11 +712,11 @@ model CareerCoachConversation {
 model CareerCoachMessage {
   id             String   @id @default(cuid())
   conversationId String
-  role           String   // user | assistant
+  role           String // user | assistant
   content        String   @db.Text
-  factsUsed      Json?    // string[] — recorded facts the reply relied on
-  suggestions    Json?    // string[] — AI-generated suggestions (not facts)
-  links          Json?    // [{ label, path }]
+  factsUsed      Json? // string[] — recorded facts the reply relied on
+  suggestions    Json? // string[] — AI-generated suggestions (not facts)
+  links          Json? // [{ label, path }]
   clarifying     Boolean  @default(false)
   provider       String?
   model          String?
@@ -643,4 +726,180 @@ model CareerCoachMessage {
 
   @@index([conversationId, createdAt])
   @@map("api_career_coach_messages")
+}
+
+// ─── Phase 10: analytics, gamification & progress intelligence ──────────────
+
+/// One career-progress score per user per local day (dayKey = YYYY-MM-DD in the user's
+/// timezone). Stored so trends compare like with like; recomputing on the same day updates in place.
+model CareerProgressSnapshot {
+  id           String   @id @default(cuid())
+  userId       String
+  dayKey       String
+  overallScore Int?
+  dimensions   Json // [{ key, label, weight, score, included, evidence[], explanation }]
+  coverage     Json // { included, total, weightUsed }
+  method       String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayKey])
+  @@index([userId, createdAt])
+  @@map("api_career_progress_snapshots")
+}
+
+/// Points / level / streak summary. Totals are always re-derived from PointTransaction rows
+/// (never accepted from the client). `timezone` is the IANA zone used for streak day boundaries.
+model GamificationProfile {
+  id                      String    @id @default(cuid())
+  userId                  String    @unique
+  totalPoints             Int       @default(0)
+  level                   Int       @default(1)
+  timezone                String    @default("UTC")
+  currentStreak           Int       @default(0)
+  longestStreak           Int       @default(0)
+  lastActivityDay         String?
+  notificationPreferences Json? // { achievements, levels, reports, goals, milestones, assessments }
+  lastReconciledAt        DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_gamification_profiles")
+}
+
+/// Auditable ledger. `eventKey` identifies the real-world activity (e.g. learning_task_completed:<taskId>);
+/// `kind` is award or reversal and `cycle` increments each time the same activity is re-awarded
+/// after a reversal, so the unique constraint blocks duplicate rewards.
+model PointTransaction {
+  id         String   @id @default(cuid())
+  userId     String
+  eventKey   String
+  eventType  String
+  kind       String // award | reversal
+  cycle      Int      @default(1)
+  points     Int
+  sourceType String?
+  sourceId   String?
+  title      String
+  occurredAt DateTime
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventKey, kind, cycle])
+  @@index([userId, createdAt])
+  @@index([userId, eventType])
+  @@map("api_point_transactions")
+}
+
+/// Unlock record. Achievement definitions (criteria) live in services/progress/progressConfig.js;
+/// the unique constraint prevents a second unlock of the same key.
+model UserAchievement {
+  id             String   @id @default(cuid())
+  userId         String
+  achievementKey String
+  unlockedAt     DateTime @default(now())
+  progressValue  Int
+  targetValue    Int
+  evidence       Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementKey])
+  @@index([userId, unlockedAt])
+  @@map("api_user_achievements")
+}
+
+/// A personal career-development goal. `currentValue` is recomputed from linked records
+/// (goalType + linkKey) and `baselineValue` is the value at creation so progress counts only new activity.
+model UserGoal {
+  id            String    @id @default(cuid())
+  userId        String
+  title         String
+  description   String?   @db.Text
+  goalType      String // mock_interviews | learning_tasks | roadmap_completion | resume_quality | skill_practice | applications | custom
+  linkKey       String? // roadmapId / skillName / resumeId / targetRole depending on goalType
+  targetValue   Int
+  baselineValue Int       @default(0)
+  currentValue  Int       @default(0)
+  unit          String    @default("count")
+  targetDate    DateTime?
+  status        String    @default("active") // active | paused | completed | archived
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([userId, targetDate])
+  @@map("api_user_goals")
+}
+
+/// Activity history entry (what the user did, when). Derived from persisted records; one row per eventKey.
+model ActivityEvent {
+  id         String   @id @default(cuid())
+  userId     String
+  eventKey   String
+  eventType  String
+  title      String
+  category   String // learning | interview | resume | application | career | gamification
+  points     Int      @default(0)
+  href       String?
+  occurredAt DateTime
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventKey])
+  @@index([userId, occurredAt])
+  @@map("api_activity_events")
+}
+
+/// Weekly / monthly progress report. Metrics are deterministic; `narrative` is the optional AI summary
+/// (clearly labelled) and `aiUsed` records whether the provider contributed.
+model ProgressReport {
+  id          String   @id @default(cuid())
+  userId      String
+  periodType  String // weekly | monthly
+  periodStart DateTime
+  periodEnd   DateTime
+  metrics     Json
+  narrative   Json? // { summary, highlights[], priorities[], source: "ai" | "deterministic" }
+  aiUsed      Boolean  @default(false)
+  provider    String?
+  model       String?
+  method      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, periodType, periodStart])
+  @@index([userId, createdAt])
+  @@map("api_progress_reports")
+}
+
+/// In-app notification. `dedupeKey` prevents a second notification for the same event.
+model UserNotification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String // achievement | level | milestone | assessment | report | goal | streak
+  title     String
+  body      String    @db.Text
+  href      String?
+  dedupeKey String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt])
+  @@map("api_user_notifications")
 }

@@ -106,8 +106,60 @@ function defaultBehaviour(req) {
   if (req.schemaName === "resume_structure") return validResumeStructure(req);
   if (req.schemaName === "resume_improvements") return validImprovements(req);
   if (req.schemaName === "resume_tailoring") return validTailoring(req);
+  if (req.schemaName === "resume_assistant") return validAssistantReply(req);
+  if (req.schemaName === "resume_suggestion_regenerate") return validRegeneratedSuggestion(req);
   if (req.schemaName === "career_coach") return validCoachReply(req);
+  if (req.schemaName === "progress_report") return validProgressNarrative(req);
   return validAiOutput();
+}
+
+/**
+ * Writing-assistant reply. Proposes one in-scope draft, one out-of-scope draft
+ * (must be discarded), and one draft carrying an invented metric (must come
+ * back flagged needsConfirmation).
+ */
+export function validAssistantReply(req) {
+  const user = req?.user ?? "";
+  const fields = [...user.matchAll(/- sectionId=(\S+) entryId=(\S+) field=(\S+)[^\n]*\n\s+"([^"]*)"/g)]
+    .map((m) => ({ sectionId: m[1], entryId: m[2] === "null" ? null : m[2], field: m[3], text: m[4] }));
+  const first = fields[0];
+  const drafts = [];
+  if (first) {
+    drafts.push({ sectionId: first.sectionId, entryId: first.entryId, field: first.field, text: `Rewritten: ${first.text}`.slice(0, 600), rationale: "Leads with the action and keeps every original fact." });
+    // Invented figure — the fabrication guard must flag this one.
+    drafts.push({ sectionId: first.sectionId, entryId: first.entryId, field: first.field, text: "Reduced page load time by 73% for 9,000 monthly users", rationale: "Quantifies the outcome." });
+  }
+  // A field that was never offered — postProcessAssistant must reject it.
+  drafts.push({ sectionId: "s_not_in_scope", entryId: null, field: "summary", text: "Out of scope rewrite", rationale: "Should be dropped." });
+  return {
+    answer: "Lead each bullet with the action you took, then the effect it had.",
+    drafts,
+    questions: ["How many users did the dashboard serve?"],
+    evidencedSkills: ["React", "TypeScript"],
+    skillsToLearn: ["GraphQL"],
+  };
+}
+
+/** A regenerated single-field suggestion, deliberately different from the previous one. */
+export function validRegeneratedSuggestion(req) {
+  const current = /Current text:\n"([^"]*)"/.exec(req?.user ?? "")?.[1] ?? "Improved text";
+  return {
+    suggestedText: `Shipped ${current.charAt(0).toLowerCase()}${current.slice(1)}`.slice(0, 1400),
+    rationale: "A different framing that opens on delivery rather than construction.",
+    title: "Open on what shipped",
+    issue: "The previous rewrite kept the same shape as the original.",
+    benefit: "Reads as ownership of an outcome, not a task.",
+    priority: "medium",
+    missingDetailQuestion: null,
+  };
+}
+
+/** Progress-report narrative that only reuses numbers present in the supplied metrics. */
+export function validProgressNarrative(req) {
+  const m = /METRICS \(JSON\):\n(\{.*?\})\n\nDeterministic/s.exec(req?.user ?? "");
+  let metrics = null; try { metrics = m ? JSON.parse(m[1]) : null; } catch { metrics = null; }
+  const total = metrics?.activities?.total ?? 0;
+  return { summary: `You recorded ${total} activities this period. Keep going!`, highlights: total ? [`${metrics.activities.learningTasks} learning tasks completed`] : [], priorities: ["Consider scheduling one mock interview next week."] };
 }
 
 /** Grounded coach reply: echoes a recorded fact, adds a suggestion, links to a known page, invents one "fact". */
@@ -296,8 +348,19 @@ const RELATIONS = {
     resume: { model: "resume", kind: "one", localKey: "resumeId" },
     jobDescription: { model: "jobDescription", kind: "one", localKey: "jobDescriptionId" },
     improvements: { model: "resumeImprovement", kind: "many", foreignKey: "versionId" },
+    atsAssessments: { model: "resumeAtsAssessment", kind: "many", foreignKey: "versionId" },
+    roleRecommendations: { model: "resumeRoleRecommendation", kind: "many", foreignKey: "versionId" },
   },
   resumeImprovement: {
+    version: { model: "resumeVersion", kind: "one", localKey: "versionId" },
+  },
+  resumeAtsAssessment: {
+    user: { model: "user", kind: "one", localKey: "userId" },
+    version: { model: "resumeVersion", kind: "one", localKey: "versionId" },
+    jobDescription: { model: "jobDescription", kind: "one", localKey: "jobDescriptionId" },
+  },
+  resumeRoleRecommendation: {
+    user: { model: "user", kind: "one", localKey: "userId" },
     version: { model: "resumeVersion", kind: "one", localKey: "versionId" },
   },
   resumeTemplatePreference: {
@@ -310,13 +373,21 @@ const RELATIONS = {
   careerActionTask: { plan: { model: "careerActionPlan", kind: "one", localKey: "planId" }, user: { model: "user", kind: "one", localKey: "userId" } },
   careerCoachConversation: { user: { model: "user", kind: "one", localKey: "userId" }, messages: { model: "careerCoachMessage", kind: "many", foreignKey: "conversationId" } },
   careerCoachMessage: { conversation: { model: "careerCoachConversation", kind: "one", localKey: "conversationId" } },
+  careerProgressSnapshot: { user: { model: "user", kind: "one", localKey: "userId" } },
+  gamificationProfile: { user: { model: "user", kind: "one", localKey: "userId" } },
+  pointTransaction: { user: { model: "user", kind: "one", localKey: "userId" } },
+  userAchievement: { user: { model: "user", kind: "one", localKey: "userId" } },
+  userGoal: { user: { model: "user", kind: "one", localKey: "userId" } },
+  activityEvent: { user: { model: "user", kind: "one", localKey: "userId" } },
+  progressReport: { user: { model: "user", kind: "one", localKey: "userId" } },
+  userNotification: { user: { model: "user", kind: "one", localKey: "userId" } },
 };
 
 /** onDelete behaviour: which foreign keys to null out / which rows to cascade-delete. */
 const ON_DELETE = {
-  user: { cascade: [["analysis", "userId"], ["resume", "userId"], ["jobDescription", "userId"], ["jobApplication", "userId"], ["interviewSession", "userId"], ["learningRoadmap", "userId"], ["skillGap", "userId"], ["recommendationDismissal", "userId"], ["resumeVersion", "userId"], ["resumeTemplatePreference", "userId"], ["careerProfile", "userId"], ["careerAssessment", "userId"], ["careerRecommendation", "userId"], ["careerActionPlan", "userId"], ["careerActionTask", "userId"], ["careerCoachConversation", "userId"]] },
+  user: { cascade: [["analysis", "userId"], ["resume", "userId"], ["jobDescription", "userId"], ["jobApplication", "userId"], ["interviewSession", "userId"], ["learningRoadmap", "userId"], ["skillGap", "userId"], ["recommendationDismissal", "userId"], ["resumeVersion", "userId"], ["resumeTemplatePreference", "userId"], ["resumeAtsAssessment", "userId"], ["resumeRoleRecommendation", "userId"], ["careerProfile", "userId"], ["careerAssessment", "userId"], ["careerRecommendation", "userId"], ["careerActionPlan", "userId"], ["careerActionTask", "userId"], ["careerCoachConversation", "userId"], ["careerProgressSnapshot", "userId"], ["gamificationProfile", "userId"], ["pointTransaction", "userId"], ["userAchievement", "userId"], ["userGoal", "userId"], ["activityEvent", "userId"], ["progressReport", "userId"], ["userNotification", "userId"]] },
   resume: { setNull: [["analysis", "resumeId"], ["jobApplication", "resumeId"], ["resumeVersion", "resumeId"]] },
-  jobDescription: { setNull: [["analysis", "jobDescriptionId"], ["jobApplication", "jobDescriptionId"], ["resumeVersion", "jobDescriptionId"]] },
+  jobDescription: { setNull: [["analysis", "jobDescriptionId"], ["jobApplication", "jobDescriptionId"], ["resumeVersion", "jobDescriptionId"], ["resumeAtsAssessment", "jobDescriptionId"]] },
   analysis: { setNull: [["jobApplication", "analysisId"]] },
   jobApplication: {},
   interviewSession: { cascade: [["interviewQuestion", "sessionId"], ["interviewAnswer", "sessionId"]] },
@@ -328,8 +399,10 @@ const ON_DELETE = {
   learningResource: {},
   skillGap: {},
   recommendationDismissal: {},
-  resumeVersion: { cascade: [["resumeImprovement", "versionId"]] },
+  resumeVersion: { cascade: [["resumeImprovement", "versionId"], ["resumeAtsAssessment", "versionId"], ["resumeRoleRecommendation", "versionId"]] },
   resumeImprovement: {},
+  resumeAtsAssessment: {},
+  resumeRoleRecommendation: {},
   resumeTemplatePreference: {},
   careerProfile: {},
   careerAssessment: { setNull: [["careerRecommendation", "assessmentId"]] },
@@ -338,6 +411,7 @@ const ON_DELETE = {
   careerActionTask: {},
   careerCoachConversation: { cascade: [["careerCoachMessage", "conversationId"]] },
   careerCoachMessage: {},
+  careerProgressSnapshot: {}, gamificationProfile: {}, pointTransaction: {}, userAchievement: {}, userGoal: {}, activityEvent: {}, progressReport: {}, userNotification: {},
 };
 
 const DEFAULTS = {
@@ -356,7 +430,9 @@ const DEFAULTS = {
   skillGap: () => ({ roadmapId: null, proficiencyStatus: "not_assessed", priority: "medium", priorityScore: 0, evidenceSources: [], explanation: "", whyItMatters: "", targetProficiency: "working", relatedTopics: null, userConfirmed: false, userNote: null, lastAssessedAt: null }),
   recommendationDismissal: () => ({}),
   resumeVersion: () => ({ resumeId: null, jobDescriptionId: null, parentVersionId: null, kind: "custom", isOriginal: false, templateId: "modern", contentSource: "manual", targetJobTitle: null, targetCompany: null, lastQualityScore: null }),
-  resumeImprovement: () => ({ entryId: null, needsConfirmation: false, confirmationQuestion: null, status: "pending", acceptedText: null, resolvedAt: null }),
+  resumeImprovement: () => ({ entryId: null, needsConfirmation: false, confirmationQuestion: null, status: "pending", acceptedText: null, resolvedAt: null, suggestionGroup: null, priority: "medium", title: null, issue: null, benefit: null, regenerationCount: 0 }),
+  resumeAtsAssessment: () => ({ jobDescriptionId: null, jobTitle: null, targetRole: null, templateId: null, keywordCoverage: null, skills: null }),
+  resumeRoleRecommendation: () => ({ careerLevel: null, selectedRole: null }),
   resumeTemplatePreference: () => ({ templateId: "modern" }),
   careerProfile: () => ({ careerLevel: "fresher", workMode: "any", salaryMin: null, salaryMax: null, salaryCurrency: null, goals: null }),
   careerAssessment: () => ({}),
@@ -365,6 +441,14 @@ const DEFAULTS = {
   careerActionTask: () => ({ description: null, href: null, estimatedMinutes: 30, dueDate: null, isOptional: false, sourceKey: null, status: "pending", completedAt: null, notes: null }),
   careerCoachConversation: () => ({ title: "New conversation" }),
   careerCoachMessage: () => ({ factsUsed: null, suggestions: null, links: null, clarifying: false, provider: null, model: null }),
+  careerProgressSnapshot: () => ({ overallScore: null }),
+  gamificationProfile: () => ({ totalPoints: 0, level: 1, timezone: "UTC", currentStreak: 0, longestStreak: 0, lastActivityDay: null, notificationPreferences: null, lastReconciledAt: null }),
+  pointTransaction: () => ({ cycle: 1, sourceType: null, sourceId: null }),
+  userAchievement: () => ({ unlockedAt: new Date(), evidence: null }),
+  userGoal: () => ({ description: null, linkKey: null, baselineValue: 0, currentValue: 0, unit: "count", targetDate: null, status: "active", completedAt: null }),
+  activityEvent: () => ({ points: 0, href: null, metadata: null }),
+  progressReport: () => ({ narrative: null, aiUsed: false, provider: null, model: null }),
+  userNotification: () => ({ href: null, readAt: null }),
 };
 
 export function fakePrisma() {

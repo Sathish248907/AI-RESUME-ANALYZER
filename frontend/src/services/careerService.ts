@@ -50,7 +50,7 @@ export interface CareerDashboard {
   resume: { versions: number; bestQuality: number | null; uploads: number }; jobMatch: { analyses: number; average: number | null; best: { id: string; jobTitle: string; companyName: string | null; matchScore: number } | null };
   interviews: { completed: number; trend: Array<{ date: string; score: number; type: string }>; weakTopics: string[] };
   learning: { roadmapId: string; title: string; targetRole: string; percent: number; completedTasks: number; requiredTasks: number; nextTask: string | null } | null;
-  applications: { total: number; active: number; byStatus: Record<string, number>; interviews: number; upcoming: Array<{ id: string; companyName: string; jobTitle: string; status: string; nextFollowUpDate: string; overdue: boolean }> };
+  applications: { total: number; active: number; byStatus: Record<string, number>; interviews: number; upcoming: Array<{ id: string; companyName: string; jobTitle: string; status: string; nextFollowUpDate: string; overdue: boolean }>; rates: { sampleSize: number; responseRate: number | null; interviewRate: number | null; offerRate: number | null; basis: string }; closed: Array<{ id: string; companyName: string; jobTitle: string; status: string; updatedAt: string }> };
   achievements: Array<{ kind: string; title: string; date: string }>; nextAction: { title: string; href: string; reason: string; priority: string } | null; openRecommendations: number;
   plan: ({ id: string; weekStart: string; weekEnd: string; tasksDueToday: number } & PlanProgress) | null; hasProfile: boolean; generatedAt: string;
 }

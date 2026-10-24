@@ -291,7 +291,11 @@ test("editable resume: original version is created once, read-only, and derived 
   assert.equal(pref.body.preference.templateId, "technical");
   const fromPref = await api("/api/resume-builder/versions", { method: "POST", token, body: { blank: true } });
   assert.equal(fromPref.body.version.templateId, "technical");
-  assert.equal((await api("/api/resume-builder/templates", { token })).body.templates.length, 4);
+  const tpls = (await api("/api/resume-builder/templates", { token })).body.templates;
+  assert.equal(tpls.length, 6);
+  assert.deepEqual(tpls.map((t) => t.id).sort(), ["classic", "experienced", "fresher", "minimal_ats", "modern", "technical"]);
+  // Phase 8 templates must keep their ids so saved versions still resolve.
+  for (const id of ["modern", "minimal_ats", "technical", "classic"]) assert.ok(tpls.some((t) => t.id === id), `${id} must survive`);
 });
 
 test("AI structuring: grounded output accepted, rephrased output rejected with nothing persisted", async () => {

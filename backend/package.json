@@ -6,7 +6,8 @@
   "description": "Express + Prisma + LLM backend for the AI Resume Analyzer",
   "main": "src/server.js",
   "scripts": {
-    "dev": "node --watch src/server.js",
+    "dev": "node src/server.js",
+    "dev:watch": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "node --test tests/",
     "db:generate": "prisma generate",

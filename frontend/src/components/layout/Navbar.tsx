@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   FileText, LayoutDashboard, History, Menu, X,
-  Sparkles, BookOpen, ChevronDown, Briefcase, FolderSearch, ClipboardList, LineChart, Bot, Mic, Map, Target, PenSquare, Compass,
+  Sparkles, BookOpen, ChevronDown, Briefcase, FolderSearch, ClipboardList, LineChart, Bot, Mic, Map, Target, PenSquare, Compass, Activity,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/services/authService";
+import NotificationBell from "@/components/progress/NotificationBell";
 
 const primaryLinks = [
   { href: "/analyze", label: "AI Analyze", icon: Sparkles },
@@ -26,6 +27,7 @@ const dashboardDropdown = [
   { href: "/dashboard/learning", label: "Learning Roadmap", icon: Map },
   { href: "/dashboard/learning/skill-gaps", label: "Skill Gap Analysis", icon: Target },
   { href: "/dashboard/career", label: "Career Coach", icon: Compass },
+  { href: "/dashboard/progress", label: "Progress & Achievements", icon: Activity },
   { href: "/dashboard/applications", label: "Applications", icon: ClipboardList },
   { href: "/dashboard/job-descriptions", label: "Job Descriptions", icon: BookOpen },
   { href: "/dashboard/analytics", label: "Analytics", icon: LineChart },
@@ -128,6 +130,7 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-3">
             {user ? (
               <div className="flex items-center gap-2 text-sm">
+                <NotificationBell enabled={Boolean(user)} />
                 <span className="text-gray-600 max-w-[160px] truncate" title={user.email}>{user.name || user.email}</span>
                 <button type="button" onClick={logout} className="px-3 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium transition-colors">
                   Sign out

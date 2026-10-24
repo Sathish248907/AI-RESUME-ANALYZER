@@ -9,7 +9,7 @@
  * colour, typography, header alignment and section order.
  */
 import PDFDocument from "pdfkit";
-import { TEMPLATES, normaliseFormatting, sectionLines } from "./resumeContentSchema.js";
+import { TEMPLATES, normaliseFormatting, orderSectionsForTemplate, sectionLines } from "./resumeContentSchema.js";
 
 const A4 = { width: 595.28, height: 841.89 };
 const MARGIN_PT = { narrow: 36, normal: 50, wide: 64 };
@@ -20,10 +20,10 @@ const FONTS = {
   Times: { regular: "Times-Roman", bold: "Times-Bold", italic: "Times-Italic" },
   Courier: { regular: "Courier", bold: "Courier-Bold", italic: "Courier-Oblique" },
 };
-const TEMPLATE_ORDER = {
-  modern: null, minimal_ats: null, classic: null,
-  technical: ["summary", "skills", "experience", "projects", "education", "certifications", "achievements", "languages", "custom"],
-};
+/** Templates that centre the header block. */
+const CENTRED_HEADER = new Set(["classic"]);
+/** Templates that draw a rule under the header block. */
+const HEADER_RULE = new Set(["modern", "technical", "fresher", "experienced", "classic"]);
 
 /** Safe, ASCII-only filename from a version name. */
 export function safeFileName(name, ext = "pdf") {
@@ -38,13 +38,15 @@ export function safeFileName(name, ext = "pdf") {
  */
 export function renderResumePdf({ content, templateId = "modern", formatting, compress = true }) {
   const fmt = normaliseFormatting(formatting, templateId);
-  const tpl = TEMPLATES.find((t) => t.id === templateId) ?? TEMPLATES[0];
+  const tpl = TEMPLATES.find((t) => t.id === templateId) ?? TEMPLATES.find((t) => t.id === "modern");
   const font = FONTS[fmt.fontFamily] ?? FONTS.Helvetica;
   const margin = MARGIN_PT[fmt.margins] ?? MARGIN_PT.normal;
   const sp = SPACING[fmt.sectionSpacing] ?? 1;
   const base = fmt.fontSize;
-  const accent = tpl.id === "minimal_ats" ? "#111111" : fmt.accentColor;
   const ink = "#111111", muted = "#555555";
+  // ATS mode (explicit flag or an ats-safe template) drops colour and decorative rules.
+  const plain = Boolean(fmt.atsMode) || tpl.atsSafe === true;
+  const accent = plain ? ink : fmt.accentColor;
   const bullet = BULLET_CHAR[fmt.bulletStyle] ?? "•";
   const upper = (s) => (fmt.headingStyle === "uppercase" ? String(s).toUpperCase() : String(s));
   const clean = (s) => String(s ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim();
@@ -59,29 +61,27 @@ export function renderResumePdf({ content, templateId = "modern", formatting, co
 
     const width = A4.width - margin * 2;
     const p = content.personal ?? {};
-    const centred = tpl.id === "classic";
+    const centred = CENTRED_HEADER.has(tpl.id);
 
     // ── Header ──
     doc.fillColor(ink).font(font.bold).fontSize(base * 2).text(clean(p.fullName) || " ", { align: centred ? "center" : "left" });
     if (p.title) doc.font(font.regular).fontSize(base * 1.15).fillColor(accent).text(clean(p.title), { align: centred ? "center" : "left" });
     const contact = [p.email, p.phone, p.location, p.website, p.linkedin, p.github].map(clean).filter(Boolean);
     if (contact.length) doc.moveDown(0.2).font(font.regular).fontSize(base * 0.9).fillColor(muted).text(contact.join("  |  "), { align: centred ? "center" : "left" });
-    if (tpl.id === "modern" || tpl.id === "technical") { doc.moveDown(0.4); rule(doc, accent, 1.5, width); }
-    else if (tpl.id === "classic") { doc.moveDown(0.4); rule(doc, ink, 0.8, width); }
+    if (HEADER_RULE.has(tpl.id)) { doc.moveDown(0.4); rule(doc, accent, plain ? 0.8 : 1.5, width); }
     doc.moveDown(0.6 * sp);
 
     // ── Sections ──
     const visible = (content.sections ?? []).filter((s) => s.visible !== false && sectionLines(s).length > 0);
-    const order = TEMPLATE_ORDER[tpl.id];
-    const ordered = order ? [...visible].sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type)) : visible;
+    const ordered = orderSectionsForTemplate(visible, tpl.id);
 
     for (const s of ordered) {
       ensureSpace(doc, base * 4, margin);
       doc.font(font.bold).fontSize(base * 1.15).fillColor(accent).text(upper(clean(s.title)), { characterSpacing: fmt.headingStyle === "uppercase" ? 0.6 : 0 });
-      if (tpl.id !== "technical") rule(doc, tpl.id === "minimal_ats" ? "#999999" : accent, 0.6, width);
+      if (tpl.id !== "technical") rule(doc, plain ? "#999999" : accent, 0.6, width);
       doc.moveDown(0.3 * sp);
       doc.fillColor(ink).font(font.regular).fontSize(base);
-      renderSection(doc, s, { font, base, ink, muted, accent, bullet, sp, width, margin, tpl, clean });
+      renderSection(doc, s, { font, base, ink, muted, accent, bullet, sp, width, margin, tpl, clean, plain });
       doc.moveDown(0.8 * sp);
     }
 
@@ -113,7 +113,7 @@ function ensureSpace(doc, needed, margin) {
 }
 
 function renderSection(doc, s, ctx) {
-  const { font, base, ink, muted, accent, bullet, sp, width, margin, tpl, clean } = ctx;
+  const { font, base, ink, muted, accent, bullet, sp, width, margin, tpl, clean, plain } = ctx;
   const bullets = (items) => {
     for (const b of items ?? []) {
       const t = clean(b); if (!t) continue;
@@ -134,6 +134,7 @@ function renderSection(doc, s, ctx) {
     doc.x = doc.page.margins.left;
   };
   const sub = (text) => { if (text) doc.font(font.italic).fontSize(base * 0.95).fillColor(muted).text(clean(text)); };
+  const mono = tpl.id === "technical" && !plain;
   const dates = (a, b, current) => [a, current ? "Present" : b].map(clean).filter(Boolean).join(" – ");
 
   switch (s.type) {
@@ -143,9 +144,9 @@ function renderSection(doc, s, ctx) {
         if (!(g.items ?? []).length) continue;
         ensureSpace(doc, base * 2, margin);
         const label = clean(g.name);
-        const items = g.items.map(clean).filter(Boolean).join(tpl.id === "technical" ? "  ·  " : ", ");
-        if (label) { doc.font(font.bold).fontSize(base).fillColor(ink).text(`${label}: `, { continued: true }); doc.font(tpl.id === "technical" ? "Courier" : font.regular).text(items); }
-        else doc.font(tpl.id === "technical" ? "Courier" : font.regular).fontSize(base).fillColor(ink).text(items);
+        const items = g.items.map(clean).filter(Boolean).join(mono ? "  ·  " : ", ");
+        if (label) { doc.font(font.bold).fontSize(base).fillColor(ink).text(`${label}: `, { continued: true }); doc.font(mono ? "Courier" : font.regular).text(items); }
+        else doc.font(mono ? "Courier" : font.regular).fontSize(base).fillColor(ink).text(items);
         doc.moveDown(0.15 * sp);
       }
       break;

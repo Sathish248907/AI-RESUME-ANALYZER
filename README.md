@@ -249,3 +249,7 @@ See [docs/phase8.md](docs/phase8.md) for the content schema, grounded AI suggest
 ## Phase 9 — AI career coach & job application intelligence
 
 See [docs/phase9.md](docs/phase9.md) for the readiness method, recommendation / priority / plan engines, grounded coach chat, `/api/career/*` endpoints, tests and limitations.
+
+## Phase 10 — Advanced analytics, gamification & career progress intelligence
+
+Analytics dashboard with date filters and period comparisons, a transparent six-dimension Career Progress Score (missing evidence excluded, never zeroed), an auditable points ledger with reversals, levels / XP, 14 achievements, timezone-aware learning streaks, personal goals measured from real records, on-demand weekly & monthly reports (AI narrative with deterministic fallback, PDF export) and an in-app notification + activity feed. See [docs/phase10.md](docs/phase10.md). Pages live under `/dashboard/progress`; API under `/api/analytics`, `/api/gamification`, `/api/goals`, `/api/progress-reports`, `/api/notifications`.
