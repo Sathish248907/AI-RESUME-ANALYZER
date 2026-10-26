@@ -34,6 +34,14 @@ export function buildActionPlan({ snapshot, recommendations = [], existingDone =
   const add = (t) => { if (!t.sourceKey || (!seen.has(t.sourceKey) && !done.has(t.sourceKey))) { if (t.sourceKey) seen.add(t.sourceKey); tasks.push({ isOptional: false, estimatedMinutes: 30, ...t }); } };
   const dayAt = (offset) => { const d = new Date(start.getTime() + Math.min(6, Math.max(0, offset)) * DAY); d.setHours(18, 0, 0, 0); return d; };
   const todayOffset = Math.max(0, Math.floor((now - start) / DAY));
+  /**
+   * Dates that come from elsewhere are pulled into this plan's week. The
+   * roadmap's weekly plan is a rolling seven days from today, not a Monday
+   * week, so its sessions can fall on either side of these bounds; a task in
+   * *this* week's plan must be due in this week, as overdue follow-ups already
+   * are.
+   */
+  const withinWeek = (d) => (d < start ? dayAt(todayOffset) : d > end ? dayAt(6) : d);
 
   // 1. Application follow-ups due this week / overdue → first
   for (const a of (snapshot.applications ?? []).filter((x) => x.nextFollowUpDate && ACTIVE_STATUSES.includes(x.status) && new Date(x.nextFollowUpDate) <= end)) {
@@ -51,7 +59,7 @@ export function buildActionPlan({ snapshot, recommendations = [], existingDone =
     const plan = buildWeeklyPlan(snapshot.roadmap, { now });
     for (const session of plan.sessions) for (const t of session.tasks) {
       if (t.status === "completed") continue;
-      add({ title: `Roadmap: ${t.title}`, description: `${t.milestoneTitle} · ${t.skillName}`, category: "learning", href: "/dashboard/learning", estimatedMinutes: t.estimatedMinutes ?? 45, dueDate: new Date(`${session.date}T18:00:00`), sourceKey: `roadmap:${t.taskId}`, isOptional: t.isRequired === false });
+      add({ title: `Roadmap: ${t.title}`, description: `${t.milestoneTitle} · ${t.skillName}`, category: "learning", href: "/dashboard/learning", estimatedMinutes: t.estimatedMinutes ?? 45, dueDate: withinWeek(new Date(`${session.date}T18:00:00`)), sourceKey: `roadmap:${t.taskId}`, isOptional: t.isRequired === false });
     }
   }
 

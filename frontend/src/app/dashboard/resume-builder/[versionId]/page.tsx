@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Undo2, Redo2, Save, Check, AlertCircle, Loader2, Pencil, LayoutTemplate, Wand2, Target, ShieldCheck, History, Lock, Copy, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Undo2, Redo2, Save, Check, AlertCircle, Loader2, Pencil, LayoutTemplate, Wand2, Target, ShieldCheck, History, Lock, Copy, Eye, EyeOff, Gauge, ClipboardCheck, Compass, MessageSquare } from "lucide-react";
 import Button from "@/components/common/Button";
 import ConfirmDialog from "@/components/common/ConfirmDialog";
 import EmptyState from "@/components/common/EmptyState";
@@ -21,16 +21,22 @@ import ResumeQualityPanel from "@/components/resume-builder/ResumeQualityPanel";
 import ResumeVersionHistory from "@/components/resume-builder/ResumeVersionHistory";
 import ResumeComparison from "@/components/resume-builder/ResumeComparison";
 import PDFExportButton from "@/components/resume-builder/PDFExportButton";
+import ATSScorePanel from "@/components/resume-builder/ATSScorePanel";
+import ResumeValidationPanel from "@/components/resume-builder/ResumeValidationPanel";
+import RoleRecommendationPanel from "@/components/resume-builder/RoleRecommendationPanel";
+import ResumeAssistantPanel from "@/components/resume-builder/ResumeAssistantPanel";
 import {
-  compareVersions, deleteVersion, duplicateVersion, getVersion, improveVersion, listSuggestions, listVersions, qualityCheck, resolveSuggestion, restoreVersion, savePreference, tailorVersion, updateVersion,
-  type CompareResult, type Formatting, type QualityIssue, type QualityReport, type ResumeContent, type ResumeVersion, type ResumeVersionSummary, type Suggestion, type TailorResult, type Template, type TemplateId,
+  applyFix, applyTextField, askAssistant, atsCheck, atsHistory, compareVersions, deleteVersion, describeTarget, duplicateVersion, getVersion, improveVersion, listSuggestions, listVersions, qualityCheck, resolveSuggestion, restoreVersion, roleRecommendations, savePreference, selectTargetRole, tailorVersion, updateVersion, validateResume,
+  type ApplyFixResult, type AssistantDraft, type AtsAssessment, type AtsAutoFix, type AtsHistory, type AutoFixKind, type CompareResult, type Formatting, type QualityIssue, type QualityReport, type ResumeContent, type ResumeVersion, type ResumeVersionSummary, type RoleRecommendations, type Suggestion, type TailorResult, type Template, type TemplateId, type ValidationReport,
 } from "@/services/resumeBuilderService";
+import { listJobDescriptions } from "@/services/jobDescriptionService";
+import type { AssistantTurn, JobDescriptionOption } from "@/components/resume-builder/types";
 import { cn } from "@/lib/utils";
 
-type Tab = "edit" | "template" | "improve" | "tailor" | "quality" | "versions";
+type Tab = "edit" | "template" | "improve" | "tailor" | "assistant" | "ats" | "checks" | "quality" | "roles" | "versions";
 type SaveState = "saved" | "dirty" | "saving" | "error" | "readonly";
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: "edit", label: "Edit", icon: Pencil }, { id: "template", label: "Template", icon: LayoutTemplate }, { id: "improve", label: "AI improve", icon: Wand2 }, { id: "tailor", label: "Tailor to job", icon: Target }, { id: "quality", label: "Quality", icon: ShieldCheck }, { id: "versions", label: "Versions", icon: History },
+  { id: "edit", label: "Edit", icon: Pencil }, { id: "template", label: "Template", icon: LayoutTemplate }, { id: "improve", label: "AI improve", icon: Wand2 }, { id: "tailor", label: "Tailor to job", icon: Target }, { id: "assistant", label: "Assistant", icon: MessageSquare }, { id: "ats", label: "ATS score", icon: Gauge }, { id: "checks", label: "Checks", icon: ClipboardCheck }, { id: "quality", label: "Quality", icon: ShieldCheck }, { id: "roles", label: "Roles", icon: Compass }, { id: "versions", label: "Versions", icon: History },
 ];
 const HISTORY_LIMIT = 60;
 
@@ -63,12 +69,43 @@ export default function ResumeEditorPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [quality, setQuality] = useState<QualityReport | null>(null);
   const [qualityBusy, setQualityBusy] = useState(false);
-  const [qualityDirty, setQualityDirty] = useState(false);
   const [versions, setVersions] = useState<ResumeVersionSummary[]>([]);
   const [compare, setCompare] = useState<CompareResult | null>(null);
   const [restoring, setRestoring] = useState<ResumeVersionSummary | null>(null);
   const [deleting, setDeleting] = useState<ResumeVersionSummary | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // ── Phase 11: ATS readiness, checks, roles, assistant ──
+  const [savedJobs, setSavedJobs] = useState<JobDescriptionOption[]>([]);
+  const [ats, setAts] = useState<AtsAssessment | null>(null);
+  const [atsDelta, setAtsDelta] = useState<number | null>(null);
+  const [atsQuality, setAtsQuality] = useState<number | null>(null);
+  const [atsPast, setAtsPast] = useState<AtsHistory | null>(null);
+  const [atsBusy, setAtsBusy] = useState(false);
+  const [validation, setValidation] = useState<ValidationReport | null>(null);
+  const [validationBusy, setValidationBusy] = useState(false);
+  const [fixBusy, setFixBusy] = useState<AutoFixKind | null>(null);
+  const [lastFix, setLastFix] = useState<ApplyFixResult | null>(null);
+  const [roles, setRoles] = useState<RoleRecommendations | null>(null);
+  const [rolesBusy, setRolesBusy] = useState(false);
+  const [selectingRole, setSelectingRole] = useState<string | null>(null);
+  const [turns, setTurns] = useState<AssistantTurn[]>([]);
+  const [assistantBusy, setAssistantBusy] = useState(false);
+
+  /**
+   * Every derived result (quality, ATS, checks, roles) is computed from the
+   * content at one moment. `rev` counts content changes, and each panel keeps
+   * the revision it ran against, so a panel can say honestly that its numbers
+   * predate the current text instead of looking fresh.
+   */
+  const revRef = useRef(0);
+  const [rev, setRev] = useState(0);
+  const [qualityRev, setQualityRev] = useState<number | null>(null);
+  const [atsRev, setAtsRev] = useState<number | null>(null);
+  const [validationRev, setValidationRev] = useState<number | null>(null);
+  const [rolesRev, setRolesRev] = useState<number | null>(null);
+  const bumpRev = useCallback(() => { revRef.current += 1; setRev(revRef.current); }, []);
+  const stale = (ranAt: number | null) => ranAt !== null && ranAt !== rev;
 
   // Undo / redo over content snapshots
   const past = useRef<ResumeContent[]>([]);
@@ -90,6 +127,9 @@ export default function ResumeEditorPage() {
       setSaveState(v.isOriginal ? "readonly" : "saved");
       const all = await listVersions({ ...(v.resumeId ? { resumeId: v.resumeId } : {}), limit: 100 });
       setVersions(v.resumeId ? all.versions : all.versions.filter((x) => x.resumeId === null));
+      // Saved job descriptions are a convenience for the ATS and assistant panels; a failure there must not block the editor.
+      const jds = await listJobDescriptions({ limit: 50 }).catch(() => null);
+      setSavedJobs(jds ? jds.jobDescriptions.map((j) => ({ id: j.id, jobTitle: j.jobTitle, companyName: j.companyName })) : []);
     } catch (err) { setLoadError(toApiClientError(err).message); } finally { setLoading(false); }
   }, [user, versionId]);
   useEffect(() => { if (!ready) return; if (!user) { setLoading(false); return; } load(); }, [ready, user, load]);
@@ -136,11 +176,11 @@ export default function ResumeEditorPage() {
 
   function changeContent(next: ResumeContent, { record = true } = {}) {
     if (record && content) { past.current = [...past.current.slice(-HISTORY_LIMIT), content]; future.current = []; setHistVersion((n) => n + 1); }
-    setContent(next); setQualityDirty(true);
+    setContent(next); bumpRev();
     queueSave({ content: next });
   }
-  function undo() { if (!past.current.length || !content) return; const prev = past.current.pop()!; future.current.push(content); setHistVersion((n) => n + 1); setContent(prev); setQualityDirty(true); queueSave({ content: prev }); }
-  function redo() { if (!future.current.length || !content) return; const next = future.current.pop()!; past.current.push(content); setHistVersion((n) => n + 1); setContent(next); setQualityDirty(true); queueSave({ content: next }); }
+  function undo() { if (!past.current.length || !content) return; const prev = past.current.pop()!; future.current.push(content); setHistVersion((n) => n + 1); setContent(prev); bumpRev(); queueSave({ content: prev }); }
+  function redo() { if (!future.current.length || !content) return; const next = future.current.pop()!; past.current.push(content); setHistVersion((n) => n + 1); setContent(next); bumpRev(); queueSave({ content: next }); }
 
   function changeFormatting(patch: Partial<Formatting>) { if (!formatting) return; const next = { ...formatting, ...patch }; setFormatting(next); queueSave({ formatting: next }); }
   function changeTemplate(id: TemplateId) {
@@ -151,7 +191,7 @@ export default function ResumeEditorPage() {
 
   // ── Applied-content sync after AI resolve / restore ──
   function adoptVersion(v: ResumeVersion) {
-    setVersion(v); setContent(v.content); setFormatting(v.formatting); setTemplateId(v.templateId); setName(v.name); expectedUpdatedAt.current = v.updatedAt; setQualityDirty(true);
+    setVersion(v); setContent(v.content); setFormatting(v.formatting); setTemplateId(v.templateId); setName(v.name); expectedUpdatedAt.current = v.updatedAt; bumpRev();
   }
 
   async function onGenerate(input: { sectionIds?: string[]; userNotes?: string }) {
@@ -185,7 +225,98 @@ export default function ResumeEditorPage() {
     if (!version) return;
     await flush();
     setQualityBusy(true);
-    try { const r = await qualityCheck(version.id); setQuality(r.quality); setQualityDirty(false); } catch (err) { toast.error(toApiClientError(err).message); } finally { setQualityBusy(false); }
+    try { const r = await qualityCheck(version.id); setQuality(r.quality); setQualityRev(revRef.current); } catch (err) { toast.error(toApiClientError(err).message); } finally { setQualityBusy(false); }
+  }
+
+  // ── ATS readiness ──
+  async function runAts(input: { jobDescriptionId?: string; jobDescription?: string; jobTitle?: string; saveJobDescription?: boolean }) {
+    if (!version) return;
+    await flush();
+    setAtsBusy(true);
+    try {
+      const r = await atsCheck(version.id, { ...input, save: true });
+      setAts(r.ats); setAtsDelta(r.delta); setAtsQuality(r.quality.overall); setAtsRev(revRef.current);
+      setAtsPast(await atsHistory(version.id).catch(() => null));
+      if (input.saveJobDescription) { const jds = await listJobDescriptions({ limit: 50 }).catch(() => null); if (jds) setSavedJobs(jds.jobDescriptions.map((j) => ({ id: j.id, jobTitle: j.jobTitle, companyName: j.companyName }))); }
+    } catch (err) { toast.error(toApiClientError(err).message); } finally { setAtsBusy(false); }
+  }
+
+  // ── Deterministic checks and safe fixes ──
+  async function runValidation() {
+    if (!version) return;
+    await flush();
+    setValidationBusy(true);
+    try { const r = await validateResume(version.id); setValidation(r.validation); setValidationRev(revRef.current); } catch (err) { toast.error(toApiClientError(err).message); } finally { setValidationBusy(false); }
+  }
+  /** Applies one mechanical fix server-side, then re-reads the findings so the list matches the new content. */
+  async function doApplyFix(fix: { kind: AutoFixKind; sectionId?: string; value?: string }) {
+    if (!version || readOnly) return;
+    await flush();
+    setFixBusy(fix.kind);
+    try {
+      const r = await applyFix(version.id, fix);
+      setLastFix(r);
+      if (!r.changed) { toast.success(r.summary); return; }
+      if (content) { past.current = [...past.current.slice(-HISTORY_LIMIT), content]; future.current = []; setHistVersion((n) => n + 1); }
+      adoptVersion(r.version); setSaveState("saved");
+      toast.success(r.scoreBefore !== null && r.scoreAfter !== null ? `${r.summary} ATS readiness ${r.scoreBefore} → ${r.scoreAfter}.` : r.summary);
+      const re = await validateResume(version.id);
+      setValidation(re.validation); setValidationRev(revRef.current);
+    } catch (err) { toast.error(toApiClientError(err).message); } finally { setFixBusy(null); }
+  }
+  /** The ATS panel surfaces the same fixes on its findings. */
+  async function applyAtsFix(fix: AtsAutoFix) {
+    await doApplyFix({ kind: fix.kind, sectionId: fix.sectionId, value: fix.value });
+  }
+
+  // ── Role recommendations ──
+  async function runRoles() {
+    if (!version) return;
+    await flush();
+    setRolesBusy(true);
+    try { const r = await roleRecommendations(version.id, { save: true }); setRoles(r); setRolesRev(revRef.current); } catch (err) { toast.error(toApiClientError(err).message); } finally { setRolesBusy(false); }
+  }
+  async function doSelectRole(input: { role: string; applyTemplate: boolean; applySectionOrder: boolean }) {
+    if (!version) return;
+    await flush();
+    setSelectingRole(input.role);
+    try {
+      const r = await selectTargetRole(version.id, { ...input, recommendationId: roles?.recommendationId ?? undefined });
+      if (content && (input.applyTemplate || input.applySectionOrder)) { past.current = [...past.current.slice(-HISTORY_LIMIT), content]; future.current = []; setHistVersion((n) => n + 1); }
+      adoptVersion(r.version); setSaveState("saved");
+      setRoles((prev) => (prev ? { ...prev, currentTargetRoles: r.targetRoles } : prev));
+      const applied = [r.applied.template && "template", r.applied.sectionOrder && "section order"].filter(Boolean).join(" and ");
+      toast.success(r.readOnlySkipped ?? `Targeting ${r.targetRole}${applied ? ` · applied the ${applied}` : ""}.`);
+    } catch (err) { toast.error(toApiClientError(err).message); } finally { setSelectingRole(null); }
+  }
+
+  // ── Writing assistant ──
+  async function onAsk(input: { intent: AssistantTurn["intent"]; question?: string; sectionId?: string; entryId?: string; targetRole?: string; jobDescriptionId?: string; scopeLabel: string; intentLabel: string }) {
+    if (!version) return;
+    await flush();
+    const id = `turn_${Date.now()}`;
+    const turn: AssistantTurn = { id, intent: input.intent, intentLabel: input.intentLabel, question: input.question ?? "", scopeLabel: input.scopeLabel, askedAt: new Date().toISOString(), reply: null, error: null };
+    setTurns((all) => [...all, turn]);
+    setAssistantBusy(true);
+    try {
+      // Recent turns only, so a long thread cannot push the resume out of the prompt.
+      const history = turns.slice(-3).flatMap((t) => (t.reply ? [{ role: "user" as const, text: t.question || t.intentLabel }, { role: "assistant" as const, text: t.reply.answer }] : []));
+      const reply = await askAssistant(version.id, { intent: input.intent, question: input.question, sectionId: input.sectionId, entryId: input.entryId, targetRole: input.targetRole, jobDescriptionId: input.jobDescriptionId, history });
+      setTurns((all) => all.map((t) => (t.id === id ? { ...t, reply } : t)));
+    } catch (err) {
+      const message = toApiClientError(err).message;
+      setTurns((all) => all.map((t) => (t.id === id ? { ...t, error: message } : t)));
+    } finally { setAssistantBusy(false); }
+  }
+  /** Inserts one assistant draft into the content. Drafts are never written server-side. */
+  async function insertDraft(draft: AssistantDraft, text: string): Promise<boolean> {
+    if (!content || readOnly) return false;
+    const target = { sectionId: draft.sectionId, entryId: draft.entryId, field: draft.field };
+    const next = applyTextField(content, target, text);
+    if (!next) { toast.error("That part of the resume has changed since the draft was written. Ask again."); return false; }
+    changeContent(next);
+    toast.success(`Inserted into ${describeTarget(next, target)}.`);
+    return true;
   }
 
   // ── Versions ──
@@ -248,7 +379,11 @@ export default function ResumeEditorPage() {
             {tab === "template" && <ResumeTemplateSelector templates={templates} templateId={templateId} formatting={formatting} onTemplate={changeTemplate} onFormatting={changeFormatting} onSaveDefault={async () => { try { await savePreference({ templateId, formatting }); toast.success("Saved as your default for new versions."); } catch (err) { toast.error(toApiClientError(err).message); } }} />}
             {tab === "improve" && <AIImprovementPanel content={content} suggestions={suggestions} generalNotes={generalNotes} busy={aiBusy} busyId={busyId} aiConfigured={aiConfigured} readOnly={readOnly} onGenerate={onGenerate} onResolve={onResolve} onLocate={locate} />}
             {tab === "tailor" && <JobTailoringPanel content={content} version={version} suggestions={suggestions} lastResult={tailorResult} busy={aiBusy} busyId={busyId} aiConfigured={aiConfigured} onTailor={onTailor} onResolve={onResolve} onLocate={locate} />}
-            {tab === "quality" && <ResumeQualityPanel report={quality} busy={qualityBusy} onRun={runQuality} dirty={qualityDirty} onLocate={(i: QualityIssue) => locate({ sectionId: i.sectionId as string, entryId: i.entryId })} />}
+            {tab === "assistant" && <ResumeAssistantPanel content={content} turns={turns} busy={assistantBusy} aiConfigured={aiConfigured} readOnly={readOnly} savedJobs={savedJobs} targetRole={roles?.currentTargetRoles[0] ?? version.targetJobTitle} onAsk={onAsk} onInsertDraft={insertDraft} onLocate={(t) => locate({ sectionId: t.sectionId as string, entryId: t.entryId })} />}
+            {tab === "ats" && <ATSScorePanel assessment={ats} history={atsPast} delta={atsDelta} qualityScore={atsQuality} busy={atsBusy} stale={stale(atsRev)} savedJobs={savedJobs} onRun={runAts} onLocate={(t) => locate({ sectionId: t.sectionId as string, entryId: t.entryId })} onApplyFix={readOnly ? undefined : async (fix) => { await applyAtsFix(fix); }} />}
+            {tab === "checks" && <ResumeValidationPanel report={validation} busy={validationBusy} stale={stale(validationRev)} fixBusy={fixBusy} lastFix={lastFix} readOnly={readOnly} onRun={runValidation} onApplyFix={doApplyFix} onLocate={(t) => locate({ sectionId: t.sectionId as string, entryId: t.entryId })} />}
+            {tab === "quality" && <ResumeQualityPanel report={quality} busy={qualityBusy} onRun={runQuality} dirty={stale(qualityRev)} onLocate={(i: QualityIssue) => locate({ sectionId: i.sectionId as string, entryId: i.entryId })} />}
+            {tab === "roles" && <RoleRecommendationPanel result={roles} busy={rolesBusy} stale={stale(rolesRev)} selectingRole={selectingRole} readOnly={readOnly} onRun={runRoles} onSelectRole={doSelectRole} onLocate={(t) => locate({ sectionId: t.sectionId as string, entryId: t.entryId })} />}
             {tab === "versions" && <ResumeVersionHistory versions={versions} currentId={version.id} onRename={onRename} onDuplicate={onDuplicate} onDelete={setDeleting} onCompare={onCompare} onRestore={(v) => { if (readOnly) { toast.error("The original is read-only. Open a working version to restore into it."); return; } setRestoring(v); }} />}
           </div>
         </div>

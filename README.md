@@ -253,3 +253,7 @@ See [docs/phase9.md](docs/phase9.md) for the readiness method, recommendation / 
 ## Phase 10 — Advanced analytics, gamification & career progress intelligence
 
 Analytics dashboard with date filters and period comparisons, a transparent six-dimension Career Progress Score (missing evidence excluded, never zeroed), an auditable points ledger with reversals, levels / XP, 14 achievements, timezone-aware learning streaks, personal goals measured from real records, on-demand weekly & monthly reports (AI narrative with deterministic fallback, PDF export) and an in-app notification + activity feed. See [docs/phase10.md](docs/phase10.md). Pages live under `/dashboard/progress`; API under `/api/analytics`, `/api/gamification`, `/api/goals`, `/api/progress-reports`, `/api/notifications`.
+
+## Phase 11 — ATS readiness, resume validation, role fit & writing assistant
+
+A transparent seven-category ATS readiness score with a ranked action plan and saved trends (general and job-specific kept apart), deterministic document checks with nine safe mechanical fixes that report their real before/after score, evidence-based suitability for ten roles (no salary, demand or hiring-probability claims), and an in-editor writing assistant that returns editable drafts and withholds any draft that invents a fact. See [docs/phase11.md](docs/phase11.md). Panels live in the resume editor at `/dashboard/resume-builder/[versionId]`; API under `/api/resume-builder/versions/:versionId/*`.

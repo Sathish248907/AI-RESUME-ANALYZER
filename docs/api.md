@@ -277,3 +277,19 @@ All routes require `Authorization: Bearer <jwt>`; records are owner-scoped and n
 | GET / POST / PATCH / DELETE | `/api/goals[/:goalId]` | measured goals reject manual `currentValue` (409) |
 | POST / GET | `/api/progress-reports/generate` · `/api/progress-reports[/:reportId]` · `/:reportId/pdf` | AI narrative optional, deterministic fallback |
 | GET / PATCH / POST | `/api/notifications` · `/:notificationId/read` · `/read-all` · `/preferences` | in-app only, de-duplicated |
+
+## ATS readiness, checks, roles & writing assistant (Phase 11)
+
+All routes live under `/api/resume-builder/versions/:versionId` and require `Authorization: Bearer <jwt>`;
+records are owner-scoped (404 otherwise). Only the assistant calls the model — everything else is
+deterministic and sits under a generous rate limit. Full reference in [phase11.md](phase11.md).
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `…/ats-check` | weighted ATS readiness; `jobDescriptionId` / `jobDescription` switches general → job mode; `save` snapshots it and returns the delta |
+| GET | `…/ats-history?mode=&limit=` | past snapshots and the general / job trends, kept apart |
+| POST | `…/validate` | deterministic findings: spelling, duplication, dates, links, symbols, headings; missing facts come back as questions |
+| POST | `…/apply-fix` | one mechanical fix (`kind`), reports the real before/after score and `changed: false` for a no-op |
+| POST | `…/role-recommendations` | evidence-based suitability per role; no salary, demand or hiring-probability claim |
+| POST | `…/target-role` | saves the chosen role; optionally applies its template and section order |
+| POST | `…/assistant` | AI (long budget, AI limiter); returns prose + editable drafts, writes nothing to the resume |

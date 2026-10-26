@@ -47,8 +47,11 @@ cd backend && npx prisma generate && npx prisma migrate deploy
   Also returns the recommended resume version (tailored or best quality) and an interview-prep hint.
 - **careerActionPlanService.js** (`career-plan-1.0`) — weekly tasks from follow-ups due, high-priority
   recommendations, the roadmap's weekly plan, interview practice, resume work and optional medium
-  items, fitted to a minute budget (overflow becomes optional). Regeneration replaces only pending
-  generated tasks; done, skipped and user-added tasks are kept; a new week archives the old plan.
+  items, fitted to a minute budget (overflow becomes optional). Every due date is pulled into the
+  plan's own Monday-based week — the roadmap's weekly plan is a rolling seven days from today, so its
+  sessions can fall either side of it, and an overdue follow-up is moved to today. Regeneration
+  replaces only pending generated tasks; done, skipped and user-added tasks are kept; a new week
+  archives the old plan.
 - **interviewPrepService.js** — recommended sessions (weak topics, untested requirements, behavioral,
   advanced), practice plan, related roadmap coding tasks, score trend, follow-ups for poor answers.
 - **careerDashboardService.js** — readiness + trend, strengths / priority gaps, resume quality,
