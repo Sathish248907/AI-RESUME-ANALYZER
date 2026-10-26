@@ -61,7 +61,7 @@ export function validAiOutput() {
       meetsRequirement: "partial",
     },
     educationAlignment: {
-      resumeEvidence: ["B.Sc. Computer Science"],
+      resumeEvidence: ["B.tech information technology"],
       jobRequirements: ["Bachelor's degree in Computer Science preferred"],
       assessment: "Meets the preferred education.",
       meetsRequirement: "yes",
