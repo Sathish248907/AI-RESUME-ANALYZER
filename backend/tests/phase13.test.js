@@ -612,10 +612,13 @@ test("reminders group by the user's own calendar day and keep the zone they were
   assert.equal(grouped.counts.done, 1);
   assert.equal(grouped.timezone, "Asia/Kolkata");
 
-  // A reminder set in one zone and read from another shows both.
+  // A reminder set in one zone and read from another shows both readings.
   const fromUtc = groupReminders(reminders.slice(0, 1), { tz: "UTC", now });
   assert.ok(fromUtc.groups.overdue[0].dueInSetZone?.includes("Asia/Kolkata"));
   assert.equal(groupReminders(reminders.slice(0, 1), { tz: "Asia/Kolkata", now }).groups.overdue[0].dueInSetZone, null);
+  // An alias of the same zone reads identically, so the second line is dropped
+  // rather than printing the same time twice (found by running the UI).
+  assert.equal(groupReminders(reminders.slice(0, 1), { tz: "Asia/Calcutta", now }).groups.overdue[0].dueInSetZone, null);
 
   // An invalid zone falls back to UTC rather than throwing or silently shifting.
   assert.equal(groupReminders(reminders, { tz: "Mars/Olympus", now }).timezone, "UTC");

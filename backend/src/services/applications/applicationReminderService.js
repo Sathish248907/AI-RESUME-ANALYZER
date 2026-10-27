@@ -88,6 +88,11 @@ export function present(row, viewerZone = "UTC") {
   const due = new Date(row.dueAt);
   const fmt = (z) =>
     new Intl.DateTimeFormat("en-GB", { timeZone: z, dateStyle: "medium", timeStyle: "short" }).format(due);
+  // Compare the rendered times, not the zone names: "Asia/Calcutta" and
+  // "Asia/Kolkata" are the same zone, and two zones sharing an offset show the
+  // same moment anyway — in both cases a second reading is noise.
+  const inViewer = fmt(zone);
+  const inSetZone = fmt(setZone);
   return {
     id: row.id,
     applicationId: row.applicationId,
@@ -98,9 +103,9 @@ export function present(row, viewerZone = "UTC") {
     note: row.note,
     dueAt: row.dueAt,
     timezone: setZone,
-    dueLocal: fmt(zone),
-    /** Shown only when the viewer is reading it from a different zone. */
-    dueInSetZone: zone === setZone ? null : `${fmt(setZone)} (${setZone})`,
+    dueLocal: inViewer,
+    /** Shown only when the viewer's clock would read a different time. */
+    dueInSetZone: inViewer === inSetZone ? null : `${inSetZone} (${setZone})`,
     status: row.status,
     completedAt: row.completedAt,
     overdue: row.status === "pending" && due < new Date(),
