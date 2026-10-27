@@ -293,3 +293,29 @@ deterministic and sits under a generous rate limit. Full reference in [phase11.m
 | POST | `…/role-recommendations` | evidence-based suitability per role; no salary, demand or hiring-probability claim |
 | POST | `…/target-role` | saves the chosen role; optionally applies its template and section order |
 | POST | `…/assistant` | AI (long budget, AI limiter); returns prose + editable drafts, writes nothing to the resume |
+
+## Job discovery & matching (Phase 12)
+
+All routes require `Authorization: Bearer <jwt>`; records are owner-scoped and no route calls an LLM.
+`:jobId` is a provider listing id, or `jd:<id>` for one of your own saved job descriptions. Full
+reference in [phase12.md](phase12.md).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/jobs/discover?q=&location=&workArrangement=&employmentType=&experienceLevel=&minSalary=&postedWithinDays=&source=&sort=&page=&limit=&refresh=` | Cached provider listings + your own job descriptions, matched and ranked; `sort=relevance\|newest\|match` |
+| GET | `/api/jobs/providers` | Adapter configuration state, last result, attribution and setup guide |
+| POST | `/api/jobs/refresh` | Forces one provider round (rate-limited); 503 when no provider is configured |
+| GET | `/api/jobs/:jobId` | Listing, parsed requirements, match, ranking, preparation, saved / application state |
+| POST | `/api/jobs/:jobId/match` | Deterministic match; `compareAllVersions` returns the recommended resume version |
+| GET | `/api/jobs/:jobId/match-report` | Stored report, or computed when none exists |
+| GET | `/api/jobs/:jobId/interview-preparation` | Topics, practice questions, sessions, coding exercises, learning tasks |
+| POST | `/api/jobs/:jobId/tailor-resume` | Hands over to `/api/resume-builder/versions/:id/tailor` with a saved job description |
+| GET / POST | `/api/saved-jobs` | `state` = saved \| interested \| hidden; saving is idempotent per job |
+| PATCH / DELETE | `/api/saved-jobs/:savedJobId` | State and notes |
+| POST | `/api/saved-jobs/:savedJobId/application` | Creates one `JobApplication` (Phase 5); 409 on a duplicate unless `allowDuplicate` |
+| GET / PUT | `/api/job-preferences` | Filters plus ranking weights (each bounded 0–100) |
+| GET / POST / PATCH / DELETE | `/api/job-alerts[/:alertId]` | Saved searches; max 20, names unique |
+| POST | `/api/job-alerts/:alertId/run` | Runs the search; notifies only about listings not already announced |
+
+Application status changes stay in `/api/applications`; tailoring suggestions stay in
+`/api/resume-builder/*`. Phase 12 adds no second workflow for either.

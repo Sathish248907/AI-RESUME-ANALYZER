@@ -381,15 +381,34 @@ const RELATIONS = {
   activityEvent: { user: { model: "user", kind: "one", localKey: "userId" } },
   progressReport: { user: { model: "user", kind: "one", localKey: "userId" } },
   userNotification: { user: { model: "user", kind: "one", localKey: "userId" } },
+  // ── Phase 12 ──
+  // jobProvider's primary key is `slug`, so it has no id-based children here;
+  // the repository never traverses provider -> jobs.
+  jobProvider: {},
+  externalJob: { savedBy: { model: "savedJob", kind: "many", foreignKey: "externalJobId" }, matchReports: { model: "jobMatchReport", kind: "many", foreignKey: "externalJobId" } },
+  savedJob: {
+    user: { model: "user", kind: "one", localKey: "userId" },
+    externalJob: { model: "externalJob", kind: "one", localKey: "externalJobId" },
+    jobDescription: { model: "jobDescription", kind: "one", localKey: "jobDescriptionId" },
+    application: { model: "jobApplication", kind: "one", localKey: "applicationId" },
+  },
+  jobSearchPreference: { user: { model: "user", kind: "one", localKey: "userId" } },
+  jobMatchReport: {
+    user: { model: "user", kind: "one", localKey: "userId" },
+    externalJob: { model: "externalJob", kind: "one", localKey: "externalJobId" },
+    jobDescription: { model: "jobDescription", kind: "one", localKey: "jobDescriptionId" },
+    resumeVersion: { model: "resumeVersion", kind: "one", localKey: "resumeVersionId" },
+  },
+  jobAlert: { user: { model: "user", kind: "one", localKey: "userId" } },
 };
 
 /** onDelete behaviour: which foreign keys to null out / which rows to cascade-delete. */
 const ON_DELETE = {
-  user: { cascade: [["analysis", "userId"], ["resume", "userId"], ["jobDescription", "userId"], ["jobApplication", "userId"], ["interviewSession", "userId"], ["learningRoadmap", "userId"], ["skillGap", "userId"], ["recommendationDismissal", "userId"], ["resumeVersion", "userId"], ["resumeTemplatePreference", "userId"], ["resumeAtsAssessment", "userId"], ["resumeRoleRecommendation", "userId"], ["careerProfile", "userId"], ["careerAssessment", "userId"], ["careerRecommendation", "userId"], ["careerActionPlan", "userId"], ["careerActionTask", "userId"], ["careerCoachConversation", "userId"], ["careerProgressSnapshot", "userId"], ["gamificationProfile", "userId"], ["pointTransaction", "userId"], ["userAchievement", "userId"], ["userGoal", "userId"], ["activityEvent", "userId"], ["progressReport", "userId"], ["userNotification", "userId"]] },
+  user: { cascade: [["analysis", "userId"], ["resume", "userId"], ["jobDescription", "userId"], ["jobApplication", "userId"], ["interviewSession", "userId"], ["learningRoadmap", "userId"], ["skillGap", "userId"], ["recommendationDismissal", "userId"], ["resumeVersion", "userId"], ["resumeTemplatePreference", "userId"], ["resumeAtsAssessment", "userId"], ["resumeRoleRecommendation", "userId"], ["careerProfile", "userId"], ["careerAssessment", "userId"], ["careerRecommendation", "userId"], ["careerActionPlan", "userId"], ["careerActionTask", "userId"], ["careerCoachConversation", "userId"], ["careerProgressSnapshot", "userId"], ["gamificationProfile", "userId"], ["pointTransaction", "userId"], ["userAchievement", "userId"], ["userGoal", "userId"], ["activityEvent", "userId"], ["progressReport", "userId"], ["userNotification", "userId"], ["savedJob", "userId"], ["jobSearchPreference", "userId"], ["jobMatchReport", "userId"], ["jobAlert", "userId"]] },
   resume: { setNull: [["analysis", "resumeId"], ["jobApplication", "resumeId"], ["resumeVersion", "resumeId"]] },
-  jobDescription: { setNull: [["analysis", "jobDescriptionId"], ["jobApplication", "jobDescriptionId"], ["resumeVersion", "jobDescriptionId"], ["resumeAtsAssessment", "jobDescriptionId"]] },
+  jobDescription: { cascade: [["savedJob", "jobDescriptionId"], ["jobMatchReport", "jobDescriptionId"]], setNull: [["analysis", "jobDescriptionId"], ["jobApplication", "jobDescriptionId"], ["resumeVersion", "jobDescriptionId"], ["resumeAtsAssessment", "jobDescriptionId"]] },
   analysis: { setNull: [["jobApplication", "analysisId"]] },
-  jobApplication: {},
+  jobApplication: { setNull: [["savedJob", "applicationId"]] },
   interviewSession: { cascade: [["interviewQuestion", "sessionId"], ["interviewAnswer", "sessionId"]] },
   interviewQuestion: { cascade: [["interviewAnswer", "questionId"]] },
   interviewAnswer: {},
@@ -399,7 +418,7 @@ const ON_DELETE = {
   learningResource: {},
   skillGap: {},
   recommendationDismissal: {},
-  resumeVersion: { cascade: [["resumeImprovement", "versionId"], ["resumeAtsAssessment", "versionId"], ["resumeRoleRecommendation", "versionId"]] },
+  resumeVersion: { cascade: [["resumeImprovement", "versionId"], ["resumeAtsAssessment", "versionId"], ["resumeRoleRecommendation", "versionId"], ["jobMatchReport", "resumeVersionId"]] },
   resumeImprovement: {},
   resumeAtsAssessment: {},
   resumeRoleRecommendation: {},
@@ -449,6 +468,18 @@ const DEFAULTS = {
   activityEvent: () => ({ points: 0, href: null, metadata: null }),
   progressReport: () => ({ narrative: null, aiUsed: false, provider: null, model: null }),
   userNotification: () => ({ href: null, readAt: null }),
+  // ── Phase 12 ──
+  jobProvider: () => ({ attribution: null, termsUrl: null, lastFetchedAt: null, lastStatus: null, lastError: null, lastJobCount: 0, requestCount: 0 }),
+  externalJob: () => ({
+    companyLogoUrl: null, location: null, isRemote: false, workArrangement: "unknown", employmentType: "unknown",
+    experienceLevel: "unknown", salaryMin: null, salaryMax: null, salaryCurrency: null, salaryPeriod: null,
+    salaryIsEstimate: false, isSponsored: false, postedAt: null, postedAtReliable: false, sourceUrl: null,
+    applyUrl: null, tags: null, listingStatus: "open", fetchedAt: new Date(), lastCheckedAt: new Date(),
+  }),
+  savedJob: () => ({ externalJobId: null, jobDescriptionId: null, state: "saved", notes: null, applicationId: null }),
+  jobSearchPreference: () => ({ titles: [], skills: [], locations: [], workArrangements: [], employmentTypes: [], experienceLevel: null, minSalary: null, salaryCurrency: null, excludedCompanies: [], keywords: null, rankingWeights: null }),
+  jobMatchReport: () => ({ externalJobId: null, jobDescriptionId: null }),
+  jobAlert: () => ({ frequency: "manual", isActive: true, lastRunAt: null, lastResultCount: 0, lastNewCount: 0 }),
 };
 
 export function fakePrisma() {
@@ -464,6 +495,7 @@ export function fakePrisma() {
       switch (op) {
         case "equals": return a === b;
         case "in": return Array.isArray(v) && v.includes(actual);
+        case "notIn": return Array.isArray(v) && !v.includes(actual);
         case "not": return a !== b;
         case "gte": return a !== null && a !== undefined && a >= b;
         case "lte": return a !== null && a !== undefined && a <= b;
@@ -480,6 +512,7 @@ export function fakePrisma() {
     return Object.entries(where).every(([k, v]) => {
       if (k === "OR") return v.some((w) => matches(model, row, w));
       if (k === "AND") return v.every((w) => matches(model, row, w));
+      if (k === "NOT") return Array.isArray(v) ? !v.some((w) => matches(model, row, w)) : !matches(model, row, v);
       const rel = RELATIONS[model]?.[k];
       if (rel && rel.kind === "one") {
         const target = rel.reverse ? tables[rel.model].find((r) => r[rel.foreignKey] === row.id) : tables[rel.model].find((r) => r.id === row[rel.localKey]);
@@ -624,4 +657,10 @@ export const TEST_ENV = {
   LLM_PROVIDER: "anthropic",
   LLM_API_KEY: "fake-key",
   ANALYSIS_RATE_LIMIT: "100",
+  // Phase 12: no provider is enabled by default, so tests opt in explicitly.
+  JOB_PROVIDERS: "",
+  JOB_PROVIDER_TIMEOUT_MS: "2000",
+  JOB_CACHE_TTL_MINUTES: "30",
+  JOB_RETENTION_DAYS: "30",
+  JOB_PROVIDER_RATE_LIMIT_PER_MIN: "20",
 };

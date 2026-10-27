@@ -18,6 +18,7 @@ import { createLearningRoutes } from "./routes/learningRoutes.js";
 import { createResumeBuilderRoutes } from "./routes/resumeBuilderRoutes.js";
 import { createCareerRoutes } from "./routes/careerRoutes.js";
 import { createProgressRoutes } from "./routes/progressRoutes.js";
+import { createJobRoutes } from "./routes/jobRoutes.js";
 import { createAuthService } from "./services/authService.js";
 import { createAnalysisRepository } from "./models/analysisRepository.js";
 import { createResumeRepository } from "./models/resumeRepository.js";
@@ -29,7 +30,11 @@ import { createLearningRepository } from "./models/learningRepository.js";
 import { createResumeBuilderRepository } from "./models/resumeBuilderRepository.js";
 import { createCareerRepository } from "./models/careerRepository.js";
 import { createProgressRepository } from "./models/progressRepository.js";
+import { createJobRepository } from "./models/jobRepository.js";
 import { createLlmProvider, providerConfigFromEnv } from "./services/ai/llmProvider.js";
+import { createJobProviderRegistry } from "./services/jobs/jobProviderRegistry.js";
+import { createJobDiscoveryService } from "./services/jobs/jobDiscoveryService.js";
+import { createJobAlertService } from "./services/jobs/jobAlertService.js";
 import { createStorage } from "./services/storage/storageService.js";
 import { logger } from "./utils/logger.js";
 
@@ -43,9 +48,9 @@ export function aiRequestBudgetMs(env) {
 
 /**
  * @param {{ env: ReturnType<import("./config/env.js").loadEnv>, prisma: import("@prisma/client").PrismaClient,
- *           llm?: any, authService?: any, storage?: any }} deps
+ *           llm?: any, authService?: any, storage?: any, jobFetch?: typeof fetch }} deps
  */
-export function createApp({ env, prisma, llm, authService, storage }) {
+export function createApp({ env, prisma, llm, authService, storage, jobFetch }) {
   const app = express();
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
@@ -102,7 +107,15 @@ export function createApp({ env, prisma, llm, authService, storage }) {
     resumeBuilder: createResumeBuilderRepository(prisma),
     career: createCareerRepository(prisma),
     progress: createProgressRepository(prisma),
+    jobs: createJobRepository(prisma),
   };
+
+  // Phase 12: provider adapters do no I/O of their own; the registry performs
+  // every outbound call so timeouts and rate limits are uniform. `fetchImpl` is
+  // injectable so tests drive providers without touching the network.
+  const jobRegistry = createJobProviderRegistry({ env, fetchImpl: jobFetch, logger });
+  const jobDiscovery = createJobDiscoveryService({ repo: repos.jobs, registry: jobRegistry, env, logger });
+  const jobAlerts = createJobAlertService({ repo: repos.jobs, discovery: jobDiscovery, progressRepo: repos.progress, env, logger });
 
   // Lazy provider construction: a missing key yields a 503 at request time, not a crash at boot.
   let cachedLlm = llm ?? null;
@@ -189,6 +202,20 @@ export function createApp({ env, prisma, llm, authService, storage }) {
   app.use("/api/goals", progress.goals);
   app.use("/api/progress-reports", progress.reports);
   app.use("/api/notifications", progress.notifications);
+
+  app.use("/api", createJobRoutes({
+    authService: auth,
+    repo: repos.jobs,
+    careerRepo: repos.career,
+    applicationRepo: repos.application,
+    jobDescriptionRepo: repos.jobDescription,
+    progressRepo: repos.progress,
+    registry: jobRegistry,
+    discovery: jobDiscovery,
+    alerts: jobAlerts,
+    env,
+    analysisRateLimit: env.ANALYSIS_RATE_LIMIT,
+  }));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

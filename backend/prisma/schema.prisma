@@ -45,6 +45,10 @@ model User {
   activityEvents        ActivityEvent[]
   progressReports       ProgressReport[]
   notifications         UserNotification[]
+  savedJobs             SavedJob[]
+  jobSearchPreference   JobSearchPreference?
+  jobMatchReports       JobMatchReport[]
+  jobAlerts             JobAlert[]
 
   @@map("api_users")
 }
@@ -91,11 +95,13 @@ model JobDescription {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  analyses       Analysis[]
-  applications   JobApplication[]
-  resumeVersions ResumeVersion[]
-  atsAssessments ResumeAtsAssessment[]
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analyses        Analysis[]
+  applications    JobApplication[]
+  resumeVersions  ResumeVersion[]
+  atsAssessments  ResumeAtsAssessment[]
+  savedJobs       SavedJob[]
+  jobMatchReports JobMatchReport[]
 
   @@index([userId, createdAt])
   @@index([userId, targetRole])
@@ -169,6 +175,7 @@ model JobApplication {
   jobDescription JobDescription? @relation(fields: [jobDescriptionId], references: [id], onDelete: SetNull)
   resume         Resume?         @relation(fields: [resumeId], references: [id], onDelete: SetNull)
   analysis       Analysis?       @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+  savedJobs      SavedJob[]
 
   @@index([userId, status])
   @@index([userId, applicationDate])
@@ -455,6 +462,7 @@ model ResumeVersion {
   improvements        ResumeImprovement[]
   atsAssessments      ResumeAtsAssessment[]
   roleRecommendations ResumeRoleRecommendation[]
+  jobMatchReports     JobMatchReport[]
 
   @@index([userId, updatedAt])
   @@index([resumeId, versionNumber])
@@ -902,4 +910,182 @@ model UserNotification {
   @@unique([userId, dedupeKey])
   @@index([userId, readAt, createdAt])
   @@map("api_user_notifications")
+}
+
+// ─── Phase 12: job discovery & intelligent job matching ──────────────────────
+
+/// A configured job source. These rows are bookkeeping for the code-defined
+/// adapters — credentials live in environment variables and are never stored
+/// here. Attribution text required by a provider's terms is kept so the UI can
+/// display it.
+model JobProvider {
+  slug          String    @id
+  displayName   String
+  attribution   String?
+  termsUrl      String?
+  lastFetchedAt DateTime?
+  lastStatus    String?
+  lastError     String?
+  lastJobCount  Int       @default(0)
+  requestCount  Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  jobs ExternalJob[]
+
+  @@map("api_job_providers")
+}
+
+/// One normalized listing fetched from a provider. Deliberately NOT user-scoped:
+/// it is cached third-party data subject to JOB_RETENTION_DAYS, kept separate
+/// from anything the user writes (their state lives on SavedJob). Manually
+/// entered jobs are not stored here — they reuse JobDescription.
+model ExternalJob {
+  id               String    @id @default(cuid())
+  providerSlug     String
+  externalId       String
+  /// sha1(title|company|location) — collapses the same vacancy across providers.
+  fingerprint      String
+  title            String
+  companyName      String
+  companyLogoUrl   String?
+  location         String?
+  isRemote         Boolean   @default(false)
+  /// remote | hybrid | onsite | unknown — "unknown" when the source does not say.
+  workArrangement  String    @default("unknown")
+  /// full_time | part_time | contract | internship | temporary | unknown
+  employmentType   String    @default("unknown")
+  /// entry | junior | mid | senior | lead | unknown
+  experienceLevel  String    @default("unknown")
+  description      String    @db.Text
+  salaryMin        Int?
+  salaryMax        Int?
+  salaryCurrency   String?
+  salaryPeriod     String?
+  salaryIsEstimate Boolean   @default(false)
+  /// Set only when the provider marks a listing as promoted. Never boosts rank.
+  isSponsored      Boolean   @default(false)
+  /// Only set when the provider supplies a timestamp; postedAtReliable says
+  /// whether it may be used for freshness ranking and date filtering.
+  postedAt         DateTime?
+  postedAtReliable Boolean   @default(false)
+  sourceUrl        String?
+  applyUrl         String?
+  tags             Json?
+  /// open | expired | removed
+  listingStatus    String    @default("open")
+  fetchedAt        DateTime  @default(now())
+  lastCheckedAt    DateTime  @default(now())
+
+  provider     JobProvider      @relation(fields: [providerSlug], references: [slug], onDelete: Cascade)
+  savedBy      SavedJob[]
+  matchReports JobMatchReport[]
+
+  @@unique([providerSlug, externalId])
+  @@index([fingerprint])
+  @@index([listingStatus, postedAt])
+  @@index([fetchedAt])
+  @@map("api_external_jobs")
+}
+
+/// A user's state on one job — either a provider listing or one of their own
+/// saved job descriptions (exactly one of the two ids is set). The application
+/// record itself stays in JobApplication; this only links to it.
+model SavedJob {
+  id               String   @id @default(cuid())
+  userId           String
+  externalJobId    String?
+  jobDescriptionId String?
+  /// saved | interested | hidden
+  state            String   @default("saved")
+  notes            String?  @db.Text
+  applicationId    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  externalJob    ExternalJob?    @relation(fields: [externalJobId], references: [id], onDelete: Cascade)
+  jobDescription JobDescription? @relation(fields: [jobDescriptionId], references: [id], onDelete: Cascade)
+  application    JobApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, externalJobId])
+  @@unique([userId, jobDescriptionId])
+  @@index([userId, state, updatedAt])
+  @@map("api_saved_jobs")
+}
+
+/// What the user is looking for. One row per user; drives ranking and alerts.
+model JobSearchPreference {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  titles            Json     @default("[]")
+  skills            Json     @default("[]")
+  locations         Json     @default("[]")
+  workArrangements  Json     @default("[]")
+  employmentTypes   Json     @default("[]")
+  experienceLevel   String?
+  minSalary         Int?
+  salaryCurrency    String?
+  excludedCompanies Json     @default("[]")
+  keywords          String?
+  /// Per-user ranking weight overrides; missing keys fall back to the defaults.
+  rankingWeights    Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_job_search_preferences")
+}
+
+/// A computed resume-to-job match. Recomputed on demand and updated in place for
+/// the same (job, resume version) pair; `details` holds the per-dimension
+/// evidence so the number can always be explained.
+model JobMatchReport {
+  id               String   @id @default(cuid())
+  userId           String
+  externalJobId    String?
+  jobDescriptionId String?
+  resumeVersionId  String
+  matchScore       Int
+  label            String
+  scoringVersion   String
+  details          Json
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  externalJob    ExternalJob?    @relation(fields: [externalJobId], references: [id], onDelete: Cascade)
+  jobDescription JobDescription? @relation(fields: [jobDescriptionId], references: [id], onDelete: Cascade)
+  resumeVersion  ResumeVersion   @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, externalJobId, resumeVersionId])
+  @@unique([userId, jobDescriptionId, resumeVersionId])
+  @@index([userId, updatedAt])
+  @@map("api_job_match_reports")
+}
+
+/// A saved search the user can re-run. Notifications are de-duplicated through
+/// UserNotification's (userId, dedupeKey) constraint, so re-running an alert
+/// never notifies twice for the same listing.
+model JobAlert {
+  id              String    @id @default(cuid())
+  userId          String
+  name            String
+  /// Same filter shape as JobSearchPreference, stored per alert.
+  query           Json
+  /// manual | daily | weekly — only "manual" is actually delivered without a scheduler.
+  frequency       String    @default("manual")
+  isActive        Boolean   @default(true)
+  lastRunAt       DateTime?
+  lastResultCount Int       @default(0)
+  lastNewCount    Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId, isActive])
+  @@map("api_job_alerts")
 }
