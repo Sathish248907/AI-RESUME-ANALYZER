@@ -55,6 +55,14 @@ model User {
   applicationActivities ApplicationActivity[]
   applicationReminders  ApplicationReminder[]
   applicationInterviews ApplicationInterview[]
+  integrations          ExternalIntegration[]
+  pendingAuthorizations PendingAuthorization[]
+  integrationSyncLogs   IntegrationSyncLog[]
+  calendarEvents        ExternalCalendarEvent[]
+  fileExports           ExternalFileExport[]
+  automationRules       AutomationRule[]
+  automationExecutions  AutomationExecution[]
+  emailDeliveries       EmailDelivery[]
 
   @@map("api_users")
 }
@@ -1306,4 +1314,205 @@ model ApplicationInterview {
   @@index([userId, scheduledAt])
   @@index([applicationId])
   @@map("api_application_interviews")
+}
+
+// ─── Phase 14: external integrations & workflow automation ──────────────────
+
+/// One connected (or configured) external service per user. OAuth credentials
+/// live in "credentials" as an AES-256-GCM sealed blob produced by tokenVault;
+/// the plaintext never reaches the database or any response body. The email
+/// integration reuses this row for its preferences and has no credentials.
+model ExternalIntegration {
+  id                   String    @id @default(cuid())
+  userId               String
+  /// google_calendar | google_drive | email
+  provider             String
+  /// connected | expired | disconnected | configured
+  status               String    @default("disconnected")
+  /// Sealed credential blob: "v1.<iv>.<tag>.<ciphertext>", all base64url.
+  credentials          String?
+  hasRefreshToken      Boolean   @default(false)
+  scopes               Json      @default("[]")
+  expiresAt            DateTime?
+  connectedAt          DateTime?
+  lastSyncAt           DateTime?
+  lastError            String?
+  /// A label the user recognises (e.g. the connected account's email), never a token.
+  externalAccountLabel String?
+  /// Per-integration settings: which event types sync, email categories, folder id.
+  preferences          Json      @default("{}")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user           User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syncLogs       IntegrationSyncLog[]
+  calendarEvents ExternalCalendarEvent[]
+  fileExports    ExternalFileExport[]
+
+  @@unique([userId, provider])
+  @@index([userId, status])
+  @@map("api_external_integrations")
+}
+
+/// A started OAuth authorization, held until the provider calls back. The state
+/// is single-use and short-lived; the PKCE verifier never leaves the backend.
+model PendingAuthorization {
+  id           String   @id @default(cuid())
+  userId       String
+  provider     String
+  state        String   @unique
+  codeVerifier String?
+  redirectUri  String
+  returnTo     String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, provider])
+  @@index([expiresAt])
+  @@map("api_pending_authorizations")
+}
+
+/// Audit trail of consequential external actions: connects, disconnects,
+/// refreshes and every event or file this product created at a provider.
+model IntegrationSyncLog {
+  id            String   @id @default(cuid())
+  integrationId String
+  userId        String
+  /// connect | disconnect | refresh | event_create | event_update | event_delete | drive_create | drive_update
+  action        String
+  /// ok | warning | error
+  status        String
+  detail        String?
+  externalId    String?
+  createdAt     DateTime @default(now())
+
+  integration ExternalIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId, createdAt])
+  @@index([userId, createdAt])
+  @@map("api_integration_sync_logs")
+}
+
+/// Links one of our records to the calendar event created for it. This is what
+/// makes sync idempotent: a second run finds the row and patches rather than
+/// creating a duplicate, and an unchanged contentHash costs no API call.
+model ExternalCalendarEvent {
+  id              String   @id @default(cuid())
+  integrationId   String
+  userId          String
+  /// interview | deadline | reminder
+  sourceKind      String
+  sourceId        String
+  externalEventId String?
+  calendarId      String   @default("primary")
+  contentHash     String?
+  /// synced | removed
+  status          String   @default("synced")
+  lastSyncedAt    DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  integration ExternalIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, sourceKind, sourceId])
+  @@index([userId, status])
+  @@map("api_external_calendar_events")
+}
+
+/// A document exported to cloud storage, so a repeat export updates the same
+/// file instead of leaving near-identical copies in someone's Drive.
+model ExternalFileExport {
+  id             String   @id @default(cuid())
+  integrationId  String
+  userId         String
+  /// resume_version | cover_letter
+  sourceKind     String
+  sourceId       String
+  externalFileId String
+  name           String
+  webViewLink    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  integration ExternalIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, sourceKind, sourceId])
+  @@index([userId])
+  @@map("api_external_file_exports")
+}
+
+/// A workflow the user switched on, with their configuration. One row per
+/// workflow per user.
+model AutomationRule {
+  id          String    @id @default(cuid())
+  userId      String
+  /// interview_preparation | application_follow_up | weekly_summary | resume_improvement
+  workflowKey String
+  isEnabled   Boolean   @default(false)
+  config      Json      @default("{}")
+  lastRunAt   DateTime?
+  lastStatus  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  executions AutomationExecution[]
+
+  @@unique([userId, workflowKey])
+  @@index([userId, isEnabled])
+  @@map("api_automation_rules")
+}
+
+/// One run of a workflow, including what it planned, what the user approved and
+/// what each action actually did. Retries point back at the run they repeat.
+model AutomationExecution {
+  id             String    @id @default(cuid())
+  userId         String
+  ruleId         String
+  /// planned | awaiting_approval | succeeded | partial | failed | skipped
+  status         String
+  trigger        String?
+  plannedActions Json      @default("[]")
+  results        Json      @default("[]")
+  approved       Boolean   @default(false)
+  retryOfId      String?
+  retryCount     Int       @default(0)
+  nextRetryAt    DateTime?
+  /// transient | needs_reconnect
+  errorCategory  String?
+  createdAt      DateTime  @default(now())
+
+  user User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rule AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([ruleId, createdAt])
+  @@map("api_automation_executions")
+}
+
+/// What was sent, or would have been sent. Unique on (userId, dedupeKey) so a
+/// retried workflow can never email twice. Bodies are stored truncated.
+model EmailDelivery {
+  id        String   @id @default(cuid())
+  userId    String
+  category  String
+  dedupeKey String
+  subject   String
+  recipient String
+  /// delivered | recorded | failed
+  status    String
+  transport String
+  preview   String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, createdAt])
+  @@map("api_email_deliveries")
 }

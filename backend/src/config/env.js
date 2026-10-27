@@ -44,6 +44,25 @@ const envSchema = z.object({
   ADZUNA_APP_KEY: z.string().default(""),
   ADZUNA_COUNTRY: z.string().default("gb"),
   JOOBLE_API_KEY: z.string().default(""),
+
+  // ── External integrations (Phase 14) ──
+  // Public base URL of this backend, used to build OAuth redirect URIs. It must
+  // match the redirect URI registered with the provider exactly.
+  APP_BASE_URL: z.string().default("http://localhost:4000"),
+  // 32 bytes, base64. Without it no OAuth token can be stored, so connecting is
+  // refused rather than tokens being written in the clear.
+  //   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  INTEGRATION_ENCRYPTION_KEY: z.string().default(""),
+  GOOGLE_CLIENT_ID: z.string().default(""),
+  GOOGLE_CLIENT_SECRET: z.string().default(""),
+  // log  = record what would be sent, deliver nothing (default, honest)
+  // smtp = requires a transport module to be installed and configured
+  EMAIL_TRANSPORT: z.enum(["log", "smtp"]).default("log"),
+  EMAIL_FROM: z.string().default(""),
+  SMTP_HOST: z.string().default(""),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  SMTP_USER: z.string().default(""),
+  SMTP_PASSWORD: z.string().default(""),
 });
 
 const DEFAULT_MODELS = {
@@ -66,6 +85,11 @@ export function loadEnv(source = process.env) {
   env.FRONTEND_ORIGINS = env.FRONTEND_URL.split(",").map((s) => s.trim()).filter(Boolean);
   env.LLM_CONFIGURED = env.LLM_API_KEY.length > 0;
   env.JOB_PROVIDERS_ENABLED = env.JOB_PROVIDERS.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  // A credential set is "configured" only when every part of it is present;
+  // a half-filled one is a setup error, not a working integration.
+  env.INTEGRATION_VAULT_READY = env.INTEGRATION_ENCRYPTION_KEY.length > 0;
+  env.GOOGLE_CONFIGURED = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
+  env.EMAIL_CONFIGURED = env.EMAIL_TRANSPORT === "smtp" && Boolean(env.SMTP_HOST && env.EMAIL_FROM);
   return env;
 }
 

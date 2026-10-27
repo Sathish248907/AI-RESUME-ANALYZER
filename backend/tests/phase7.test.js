@@ -89,7 +89,6 @@ test("skill gaps: classification, scoring, evidence and roadmap selection", () =
   assert.ok(selected.every((s) => s.proficiencyStatus !== "demonstrated"));
   assert.equal(selected[0].priority, "high");
 });
-
 test("skill gaps: empty inputs fall back to role baseline, never crash", () => {
   const out = analyzeSkillGaps({ targetRole: "Frontend Developer" });
   assert.ok(out.skills.length > 0);
