@@ -20,16 +20,29 @@ import {
   FileText,
 } from "lucide-react";
 import Button from "@/components/common/Button";
+import { getToken } from "@/services/api";
 
 export default function HistoryPage() {
   const [analyses, setAnalyses] = useState<AnalysisRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [signedOut, setSignedOut] = useState(false);
+
+  // This history is per account, so the route needs the same bearer token the
+  // rest of the app uses. Without one it returns 401 rather than someone
+  // else's analyses.
+  const authHeaders = (): HeadersInit => {
+    const token = getToken();
+    return token ? { authorization: `Bearer ${token}` } : {};
+  };
 
   useEffect(() => {
-    fetch("/api/history")
-      .then((r) => r.json())
+    fetch("/api/history", { headers: authHeaders() })
+      .then(async (r) => {
+        if (r.status === 401) { setSignedOut(true); return { analyses: [] }; }
+        return r.json();
+      })
       .then((d) => setAnalyses(d.analyses ?? []))
       .catch(() => setAnalyses([]))
       .finally(() => setLoading(false));
@@ -39,7 +52,8 @@ export default function HistoryPage() {
     if (!confirm("Delete this analysis?")) return;
     setDeleting(id);
     try {
-      await fetch(`/api/history?id=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/history?id=${id}`, { method: "DELETE", headers: authHeaders() });
+      if (!res.ok) throw new Error("delete failed");
       setAnalyses((prev) => prev.filter((a) => a.id !== id));
       if (expanded === id) setExpanded(null);
     } catch {
@@ -67,9 +81,13 @@ export default function HistoryPage() {
         <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-5">
           <History className="w-8 h-8 text-gray-400" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-900">No history yet</h2>
+        <h2 className="text-2xl font-bold text-gray-900">
+          {signedOut ? "Sign in to see your history" : "No history yet"}
+        </h2>
         <p className="text-gray-500 mt-3">
-          Each analysis you run will appear here so you can track your progress.
+          {signedOut
+            ? "Saved analyses belong to an account, so this page shows nothing until you sign in."
+            : "Each analysis you run will appear here so you can track your progress."}
         </p>
         <Link
           href="/analyze"

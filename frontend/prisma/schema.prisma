@@ -1,3 +1,15 @@
+// Legacy (Phase 1) schema for the public /analyze page and /history.
+//
+// These models live in the `legacy` schema of the same database (the connection
+// string carries ?schema=legacy); the Express backend owns every `api_*` table
+// through backend/prisma/schema.prisma and its migrations. Nothing here is
+// managed by a migration, and there is deliberately no db:push or db:migrate
+// script in package.json: running one against the production URL would offer to
+// reset tables this file knows nothing about.
+//
+// The NextAuth models (Account, Session, VerificationToken) were removed in
+// Phase 15 along with next-auth itself. Authentication is the backend's JWT.
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,52 +23,16 @@ model User {
   id            String    @id @default(cuid())
   name          String?
   email         String    @unique
-  emailVerified DateTime?
   image         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  accounts  Account[]
-  sessions  Session[]
   analyses  Analysis[]
   resumes   Resume[]
 }
 
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([provider, providerAccountId])
-}
-
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
-}
 
 model Resume {
   id        String   @id @default(cuid())

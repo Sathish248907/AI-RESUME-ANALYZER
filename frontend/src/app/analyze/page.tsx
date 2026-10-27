@@ -7,6 +7,7 @@ import Button from "@/components/common/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/common/Card";
 import type { AnalysisResult as AnalysisResultType } from "@/types";
 import { Sparkles, AlertCircle, RotateCcw } from "lucide-react";
+import { getToken } from "@/services/api";
 
 interface ParsedFile {
   file: File;
@@ -70,9 +71,15 @@ export default function AnalyzePage() {
     setResult(null);
 
     try {
+      // Signed in, the run is saved to your own history; signed out it still
+      // works, it is simply not saved to anyone.
+      const token = getToken();
       const res = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           resumeText: parsedResume.text,
           jobDescription: jobDescription.trim(),

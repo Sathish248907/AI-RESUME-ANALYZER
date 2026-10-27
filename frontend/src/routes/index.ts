@@ -50,7 +50,6 @@ export const APP_ROUTES = {
   RESUME_ANALYSIS_DETAIL: (analysisId: string) => `/dashboard/resume-analysis/${analysisId}`,
   HISTORY: "/history",
   LOGIN: "/auth/login",
-  SIGNIN: "/auth/signin",
 } as const;
 
 export const API_ROUTES = {
