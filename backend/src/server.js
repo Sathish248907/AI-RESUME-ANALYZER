@@ -38,3 +38,16 @@ async function shutdown(signal) {
 
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+// A crash that is not logged is a crash nobody can fix. Node's default for an
+// unhandled rejection is already to exit; these handlers make sure the reason
+// is on record first, and that the process still exits rather than carrying on
+// in an unknown state.
+process.on("unhandledRejection", (reason) => {
+  logger.error("Unhandled promise rejection", { name: reason?.name, message: reason?.message });
+  shutdown("unhandledRejection");
+});
+process.on("uncaughtException", (err) => {
+  logger.error("Uncaught exception", { name: err?.name, message: err?.message });
+  shutdown("uncaughtException");
+});

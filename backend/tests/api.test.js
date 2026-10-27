@@ -54,11 +54,37 @@ async function registerUser(email) {
   return r.body.token;
 }
 
-test("health endpoint reports AI configuration without leaking the key", async () => {
+test("public health is liveness only and describes nothing about the deployment", async () => {
   const r = await api("/api/health");
   assert.equal(r.status, 200);
-  assert.equal(r.body.ai.configured, true);
-  assert.equal(JSON.stringify(r.body).includes("fake-key"), false);
+  assert.equal(r.body.status, "ok");
+  // Reconnaissance value, so none of it is public.
+  const body = JSON.stringify(r.body);
+  for (const leaked of ["ai", "provider", "model", "storage", "fake-key"]) {
+    assert.equal(body.includes(leaked), false, `public health leaked "${leaked}"`);
+  }
+});
+
+test("readiness reports one word per dependency and nothing else", async () => {
+  const r = await api("/api/health/ready");
+  assert.equal(r.status, 200);
+  assert.equal(r.body.status, "ready");
+  assert.deepEqual(Object.keys(r.body.checks), ["database"]);
+  assert.equal(r.body.checks.database, "ok");
+});
+
+test("health details need the operator token and still never leak the AI key", async () => {
+  const anon = await api("/api/health/details");
+  assert.equal(anon.status, 401);
+
+  const wrong = await api("/api/health/details", { token: "not-the-health-token" });
+  assert.equal(wrong.status, 401);
+
+  const ok = await api("/api/health/details", { token: "test-health-token" });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.ai.configured, true);
+  assert.equal(ok.body.checks.database, "ok");
+  assert.equal(JSON.stringify(ok.body).includes("fake-key"), false);
 });
 
 test("register, login and me", async () => {

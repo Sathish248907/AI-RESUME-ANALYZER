@@ -16,7 +16,7 @@ export function errorHandler(err, req, res, _next) {
   }
 
   if (err instanceof ApiError) {
-    if (err.status >= 500) logger.error("Operational error", { code: err.code, message: err.message, path: req.path });
+    if (err.status >= 500) logger.error("Operational error", { requestId: req.id, code: err.code, message: err.message, path: req.path });
     return res.status(err.status).json({
       error: { code: err.code, message: err.message, ...(err.details ? { details: err.details } : {}), ...(err.retryable ? { retryable: true } : {}) },
     });
@@ -25,7 +25,7 @@ export function errorHandler(err, req, res, _next) {
   // Prisma connectivity problems surface as 503 so the client can offer demo mode.
   const code = err?.code ?? "";
   if (/^P1\d{3}$/.test(code) || err?.name === "PrismaClientInitializationError") {
-    logger.error("Database unavailable", { code, message: err.message });
+    logger.error("Database unavailable", { requestId: req.id, code, message: err.message });
     return res.status(503).json({ error: { code: "DATABASE_UNAVAILABLE", message: "The database is unavailable. Please try again later.", retryable: true } });
   }
 

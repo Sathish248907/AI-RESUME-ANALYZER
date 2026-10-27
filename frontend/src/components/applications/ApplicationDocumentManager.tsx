@@ -124,7 +124,7 @@ export default function ApplicationDocumentManager({
 
       {limits && (
         <p className="text-[11px] text-gray-400">
-          Up to {Math.round(limits.maxBytes / 1024 / 1024)} MB · {limits.formats.join(", ")} · the file's contents are checked, not just its name.
+          Up to {Math.round(limits.maxBytes / 1024 / 1024)} MB · {limits.formats.join(", ")} · the file&apos;s contents are checked, not just its name.
         </p>
       )}
 

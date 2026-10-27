@@ -1,0 +1,134 @@
+name: CI
+
+# Every push and every pull request to main. A red run blocks the merge, which
+# is the only thing that stops a broken build reaching a deployment.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel an in-flight run when the branch is pushed again.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Node 18.12 is the floor the engines field declares; CI runs the same major.
+  NODE_VERSION: "18.20.4"
+
+jobs:
+  backend:
+    name: Backend — tests and migrations
+    runs-on: ubuntu-latest
+
+    # A real PostgreSQL, so `prisma migrate deploy` is exercised from an empty
+    # database rather than only type-checked. No production data is involved.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: resume_analyzer_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/resume_analyzer_ci?schema=public
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install (lockfile only)
+        working-directory: backend
+        run: npm ci
+
+      - name: Validate Prisma schema
+        working-directory: backend
+        run: npx prisma validate
+
+      - name: Generate Prisma client
+        working-directory: backend
+        run: npx prisma generate
+
+      - name: Apply migrations to an empty database
+        working-directory: backend
+        run: npx prisma migrate deploy
+
+      - name: Check migrations leave no drift
+        working-directory: backend
+        run: npx prisma migrate status
+
+      - name: Unit and integration tests
+        working-directory: backend
+        # The suite uses an in-memory database fake and a fake LLM, so it needs
+        # no credentials and makes no outbound calls.
+        run: npm test
+
+      - name: Reject a misconfigured production environment
+        working-directory: backend
+        run: npm run check:env
+
+      - name: Audit production dependencies
+        working-directory: backend
+        # Advisories are reported; known-accepted ones are listed in
+        # docs/phase15.md, so this informs rather than blocks.
+        run: npm audit --omit=dev --audit-level=critical || true
+
+  frontend:
+    name: Frontend — lint, types and build
+    runs-on: ubuntu-latest
+
+    env:
+      # Build-time only. No secret belongs in a workflow file; anything real
+      # goes in repository secrets and is referenced as ${{ secrets.NAME }}.
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/placeholder?schema=legacy
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install (lockfile only)
+        working-directory: frontend
+        run: npm ci
+
+      - name: Generate the legacy Prisma client
+        working-directory: frontend
+        # Needed to type-check src/app/api/*; it reads the schema, not the database.
+        run: npx prisma generate
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Type-check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Production build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Audit production dependencies
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=critical || true

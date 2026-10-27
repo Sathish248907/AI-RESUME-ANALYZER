@@ -222,8 +222,8 @@ function SetupInner() {
             <ul className="list-disc pl-5 space-y-0.5">
               {selectedAnalysis && <li><strong>{selectedAnalysis.jobTitle}</strong> analysis: {selectedAnalysis.skillCounts.matched} matched skills count as demonstrated and are skipped; {selectedAnalysis.skillCounts.missing} missing and {selectedAnalysis.skillCounts.partial} partial skills become prioritised gaps.</li>}
               {jobDescriptionId && <li><strong>{jds.find((j) => j.id === jobDescriptionId)?.jobTitle ?? "Job description"}</strong>: its required skills score highest, preferred skills next; the text is given to the AI as untrusted context.</li>}
-              {resumeId && <li><strong>{resumes.find((r) => r.id === resumeId)?.name ?? "Resume"}</strong>: linked as the roadmap's source resume for future regeneration.</li>}
-              {useInterviews && interviewCount ? <li><strong>Interview history</strong>: topics with repeatedly low scores become review tasks and raise that skill's priority.</li> : null}
+              {resumeId && <li><strong>{resumes.find((r) => r.id === resumeId)?.name ?? "Resume"}</strong>: linked as the roadmap&apos;s source resume for future regeneration.</li>}
+              {useInterviews && interviewCount ? <li><strong>Interview history</strong>: topics with repeatedly low scores become review tasks and raise that skill&apos;s priority.</li> : null}
               {goalSkills.length > 0 && <li><strong>Goal skills</strong> ({goalSkills.join(", ")}) are always included.</li>}
               {confirmedSkills.length > 0 && <li><strong>Confirmed skills</strong> ({confirmedSkills.join(", ")}) are marked demonstrated and never taught.</li>}
             </ul>

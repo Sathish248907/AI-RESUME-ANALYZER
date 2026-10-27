@@ -727,6 +727,20 @@ export function fakePrisma() {
     async $transaction(arg) {
       return typeof arg === "function" ? arg(client) : Promise.all(arg);
     },
+    /**
+     * The readiness probe's `SELECT 1`. Set `client.dbDown = true` to make the
+     * database look unavailable, which is the only way to test that readiness
+     * actually fails when it should.
+     */
+    dbDown: false,
+    async $queryRaw() {
+      if (client.dbDown) {
+        const err = new Error("Can't reach database server");
+        err.code = "P1001";
+        throw err;
+      }
+      return [{ "?column?": 1 }];
+    },
   };
   for (const model of Object.keys(RELATIONS)) client[model] = delegate(model);
   return client;
@@ -753,4 +767,6 @@ export const TEST_ENV = {
   APP_BASE_URL: "http://localhost:4000",
   INTEGRATION_ENCRYPTION_KEY: "dGVzdC1rZXktMzItYnl0ZXMtZm9yLXZhdWx0LXRlc3Q=",
   EMAIL_TRANSPORT: "log",
+  // Phase 15: the operator-only health detail route is reachable in tests.
+  HEALTH_TOKEN: "test-health-token",
 };

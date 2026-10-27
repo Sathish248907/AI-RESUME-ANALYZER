@@ -27,7 +27,7 @@ export default function ResumeVersionHistory({ versions, currentId, onRename, on
   const [busy, setBusy] = useState<string | null>(null);
   return (
     <div className="space-y-2 text-sm">
-      <p className="text-xs text-gray-600 inline-flex items-center gap-1"><History className="w-3.5 h-3.5" /> {versions.length} version{versions.length === 1 ? "" : "s"}. The original is never edited; restore copies another version's content into the one you are editing and keeps a backup.</p>
+      <p className="text-xs text-gray-600 inline-flex items-center gap-1"><History className="w-3.5 h-3.5" /> {versions.length} version{versions.length === 1 ? "" : "s"}. The original is never edited; restore copies another version&apos;s content into the one you are editing and keeps a backup.</p>
       <ul className="space-y-2">
         {versions.map((v) => {
           const current = v.id === currentId;

@@ -6,6 +6,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { globalLimiter } from "./middleware/rateLimit.js";
+import { requestId } from "./middleware/requestId.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { createAuthRoutes } from "./routes/authRoutes.js";
 import { createAnalysisRoutes } from "./routes/analysisRoutes.js";
@@ -21,6 +22,7 @@ import { createProgressRoutes } from "./routes/progressRoutes.js";
 import { createJobRoutes } from "./routes/jobRoutes.js";
 import { createApplicationWorkspaceRoutes } from "./routes/applicationWorkspaceRoutes.js";
 import { createIntegrationRoutes } from "./routes/integrationRoutes.js";
+import { createHealthRoutes } from "./routes/healthRoutes.js";
 import { createAuthService } from "./services/authService.js";
 import { createAnalysisRepository } from "./models/analysisRepository.js";
 import { createResumeRepository } from "./models/resumeRepository.js";
@@ -49,14 +51,15 @@ import { renderResumePdf } from "./services/resumeBuilder/resumePdfService.js";
 import { renderCoverLetterPdf } from "./services/applications/coverLetterPdfService.js";
 import { createStorage } from "./services/storage/storageService.js";
 import { logger } from "./utils/logger.js";
+import { aiRequestBudgetMs } from "./app-meta.js";
+
+export { aiRequestBudgetMs };
 
 const REQUEST_TIMEOUT_MS = 120_000;
 /** Routes that call the LLM: timeout must exceed LLM_TIMEOUT_MS × (retries + 1). */
 const AI_ROUTE = /^\/api\/(analysis\/resume|analysis\/[a-z0-9]+\/regenerate|interviews|interviews\/[a-z0-9]+\/answers\/[a-z0-9]+\/evaluate|learning\/roadmaps|learning\/roadmaps\/[a-z0-9]+\/regenerate|resume-builder\/versions|resume-builder\/[a-z0-9]+\/versions|resume-builder\/versions\/[a-z0-9]+\/(improve|tailor|assistant)|resume-builder\/versions\/[a-z0-9]+\/improvements\/[a-z0-9]+\/regenerate|career\/coach\/conversations|career\/coach\/conversations\/[a-z0-9]+\/messages|progress-reports\/generate|applications\/[a-z0-9]+\/cover-letters|cover-letters\/[a-z0-9]+\/regenerate-paragraph)$/i;
 
-export function aiRequestBudgetMs(env) {
-  return env.LLM_TIMEOUT_MS * (env.LLM_MAX_RETRIES + 1) + 30_000;
-}
+
 
 /**
  * @param {{ env: ReturnType<import("./config/env.js").loadEnv>, prisma: import("@prisma/client").PrismaClient,
@@ -81,6 +84,7 @@ export function createApp({ env, prisma, llm, authService, storage, jobFetch, in
       maxAge: 600,
     })
   );
+  app.use(requestId);
   app.use(express.json({ limit: "512kb" }));
   app.use(globalLimiter);
 
@@ -101,7 +105,7 @@ export function createApp({ env, prisma, llm, authService, storage, jobFetch, in
   app.use((req, res, next) => {
     const start = Date.now();
     res.on("finish", () => {
-      if (env.NODE_ENV !== "test") logger.info("request", { method: req.method, path: req.path, status: res.statusCode, ms: Date.now() - start });
+      if (env.NODE_ENV !== "test") logger.info("request", { requestId: req.id, method: req.method, path: req.path, status: res.statusCode, ms: Date.now() - start });
     });
     next();
   });
@@ -156,14 +160,8 @@ export function createApp({ env, prisma, llm, authService, storage, jobFetch, in
     return cachedLlm;
   };
 
-  app.get("/api/health", (_req, res) => {
-    res.json({
-      status: "ok",
-      ai: { configured: env.LLM_CONFIGURED, provider: env.LLM_PROVIDER, model: env.LLM_MODEL, requestBudgetMs: aiBudget },
-      storage: { driver: files.name, retainsOriginals: files.enabled },
-      time: new Date().toISOString(),
-    });
-  });
+  // Liveness is public; anything that describes the deployment is gated.
+  app.use("/api", createHealthRoutes({ env, prisma, storage: files }));
 
   app.use("/api/auth", createAuthRoutes(auth, { limit: env.AUTH_RATE_LIMIT }));
   app.use("/api/resume", createResumeParseRoutes({ resumeRepo: repos.resume, analysisRepo: repos.analysis, storage: files }));

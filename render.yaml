@@ -1,0 +1,71 @@
+# Render blueprint for the Express/Prisma backend.
+#
+# The frontend is deployed separately (Vercel) and the database separately
+# (Neon), so this file describes one service only. Every value marked
+# `sync: false` must be set in the Render dashboard — nothing secret belongs in
+# a file that lives in the repository.
+#
+# Apply with: render blueprint launch, or point a new Blueprint at this repo.
+
+services:
+  - type: web
+    name: resume-analyzer-api
+    runtime: node
+    plan: starter
+    region: singapore
+    rootDir: backend
+    # `migrate deploy` applies pending migrations only. It never resets and
+    # never generates; it is safe to run on every release.
+    buildCommand: npm ci && npx prisma generate && npx prisma migrate deploy
+    startCommand: npm start
+
+    # Render routes traffic here only while this returns 200. It is the
+    # readiness probe, not the liveness one: a process that is up but cannot
+    # reach the database should not receive requests.
+    healthCheckPath: /api/health/ready
+
+    autoDeploy: false
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "18.20.4"
+      - key: PORT
+        value: "4000"
+
+      # ── Required. Set every one of these before the first deploy. ──
+      # The server refuses to start in production if any is missing or is still
+      # an example value (see backend/scripts/check-env.js).
+      - key: DATABASE_URL          # Neon pooled connection string
+        sync: false
+      - key: JWT_SECRET            # 48+ random bytes, base64url
+        sync: false
+      - key: FRONTEND_URL          # https origin(s) of the Vercel deployment, comma separated
+        sync: false
+      - key: APP_BASE_URL          # https URL of THIS service; the OAuth redirect base
+        sync: false
+
+      # ── AI provider ──
+      - key: LLM_PROVIDER
+        value: anthropic
+      - key: LLM_API_KEY
+        sync: false
+
+      # ── Optional: integrations (Phase 14). Unset means honestly disconnected. ──
+      - key: INTEGRATION_ENCRYPTION_KEY   # 32 bytes, base64
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+
+      # ── Optional: operator health detail ──
+      - key: HEALTH_TOKEN
+        sync: false
+
+      # ── Storage. `none` discards uploads after text extraction. A container
+      #    filesystem is ephemeral, so `local` loses files on every deploy;
+      #    see docs/phase15.md before changing this. ──
+      - key: STORAGE_DRIVER
+        value: none

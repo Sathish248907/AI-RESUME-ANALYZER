@@ -21,6 +21,9 @@ const envSchema = z.object({
   ANALYSIS_RATE_LIMIT: z.coerce.number().int().min(1).default(10),
   // Sign-in and registration attempts per 15 minutes per IP.
   AUTH_RATE_LIMIT: z.coerce.number().int().min(1).default(20),
+  // Bearer token for GET /api/health/details. Unset means the route 404s, so a
+  // deployment that never configured one exposes nothing extra.
+  HEALTH_TOKEN: z.string().default(""),
   STORE_RESUME_TEXT: z
     .string()
     .default("false")
@@ -73,6 +76,56 @@ const DEFAULT_MODELS = {
 };
 
 /**
+ * Values that appear in `.env.example`. A deployment running on one of these is
+ * misconfigured, not configured — in production that is a refusal, not a
+ * warning, because a predictable JWT secret forges every session.
+ */
+const PLACEHOLDERS = [
+  "replace-with-a-long-random-secret",
+  "replace-with-a-random-secret",
+  "generate-a-secure-random-secret-key-at-least-32-chars",
+  "your-api-key",
+  "change-me",
+];
+
+const isPlaceholder = (v) => PLACEHOLDERS.some((p) => v?.toLowerCase().includes(p));
+const isLocal = (u) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(u.trim());
+
+/**
+ * Checks that only matter once NODE_ENV is "production". They are kept apart
+ * from the schema so development stays convenient (plain http on localhost) and
+ * production stays safe.
+ *
+ * @param {object} env a parsed config
+ * @returns {string[]} problems; empty when the config is fit to deploy
+ */
+export function productionProblems(env) {
+  const problems = [];
+
+  if (isPlaceholder(env.JWT_SECRET)) {
+    problems.push("JWT_SECRET is still the example value. Generate a real one: node -e \"console.log(require('crypto').randomBytes(48).toString('base64url'))\"");
+  }
+  for (const origin of env.FRONTEND_ORIGINS) {
+    if (!origin.startsWith("https://") && !isLocal(origin)) {
+      problems.push(`FRONTEND_URL origin "${origin}" is not https. Browsers send the bearer token on every request; plain http exposes it.`);
+    }
+  }
+  if (!env.APP_BASE_URL.startsWith("https://") && !isLocal(env.APP_BASE_URL)) {
+    problems.push(`APP_BASE_URL "${env.APP_BASE_URL}" is not https. It is the OAuth redirect URI, which providers require to be https.`);
+  }
+  if (env.FRONTEND_ORIGINS.some(isLocal)) {
+    problems.push("FRONTEND_URL still contains a localhost origin. Remove it so production CORS does not accept a developer machine.");
+  }
+  if (env.INTEGRATION_ENCRYPTION_KEY && Buffer.from(env.INTEGRATION_ENCRYPTION_KEY, "base64").length !== 32) {
+    problems.push("INTEGRATION_ENCRYPTION_KEY must decode to exactly 32 bytes of base64.");
+  }
+  if (env.EMAIL_TRANSPORT === "smtp" && !(env.SMTP_HOST && env.EMAIL_FROM)) {
+    problems.push("EMAIL_TRANSPORT is \"smtp\" but SMTP_HOST or EMAIL_FROM is missing, so nothing would be delivered.");
+  }
+  return problems;
+}
+
+/**
  * Parse process.env (or a supplied object) into a validated config.
  * @param {NodeJS.ProcessEnv} [source]
  */
@@ -92,6 +145,19 @@ export function loadEnv(source = process.env) {
   env.INTEGRATION_VAULT_READY = env.INTEGRATION_ENCRYPTION_KEY.length > 0;
   env.GOOGLE_CONFIGURED = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
   env.EMAIL_CONFIGURED = env.EMAIL_TRANSPORT === "smtp" && Boolean(env.SMTP_HOST && env.EMAIL_FROM);
+
+  // In production a misconfiguration is refused at boot. Everywhere else the
+  // same findings are printed so they are fixed before the deploy, not during.
+  const problems = productionProblems(env);
+  if (problems.length) {
+    const report = problems.map((p) => `  - ${p}`).join("\n");
+    if (env.NODE_ENV === "production") {
+      throw new Error(`Refusing to start in production with this configuration:\n${report}`);
+    }
+    if (env.NODE_ENV !== "test") {
+      console.warn(`[env] ${problems.length} setting(s) would block a production start:\n${report}`);
+    }
+  }
   return env;
 }
 
