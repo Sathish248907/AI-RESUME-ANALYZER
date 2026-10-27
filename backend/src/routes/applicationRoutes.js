@@ -5,9 +5,15 @@ import { idParam } from "../validators/common.js";
 import { applicationCreateSchema, applicationListQuerySchema, applicationUpdateSchema } from "../validators/applicationSchemas.js";
 import { createApplicationController } from "../controllers/applicationController.js";
 
-export function createApplicationRoutes({ authService, repo }) {
+/**
+ * @param {{ authService, repo, workspaceRepo?: object }} deps `workspaceRepo`
+ * (Phase 13) lets this endpoint validate status transitions and write the
+ * activity row for a status change, so the tracker stays the only place a
+ * status changes.
+ */
+export function createApplicationRoutes({ authService, repo, workspaceRepo = null }) {
   const router = Router();
-  const controller = createApplicationController({ repo });
+  const controller = createApplicationController({ repo, workspaceRepo });
   const auth = requireAuth(authService);
 
   router.get("/", auth, validate(applicationListQuerySchema, "query"), controller.list);

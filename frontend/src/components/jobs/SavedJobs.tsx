@@ -100,10 +100,12 @@ export default function SavedJobs({
               <li key={item.savedJobId} className="rounded-xl border border-gray-200 bg-white p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <Link href={`/dashboard/jobs/${encodeURIComponent(item.job.id)}`} className="font-semibold text-gray-900 hover:text-indigo-700">
-                      {item.job.title}
-                    </Link>
-                    <p className="text-sm text-gray-700 mt-0.5 inline-flex items-center gap-1.5">
+                    <div>
+                      <Link href={`/dashboard/jobs/${encodeURIComponent(item.job.id)}`} className="font-semibold text-gray-900 hover:text-indigo-700">
+                        {item.job.title}
+                      </Link>
+                    </div>
+                    <p className="text-sm text-gray-700 mt-0.5 flex items-center gap-1.5">
                       <Building2 className="w-3.5 h-3.5 text-gray-400" /> {item.job.companyName}
                     </p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">

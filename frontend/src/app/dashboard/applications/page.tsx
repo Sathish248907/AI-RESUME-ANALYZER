@@ -386,8 +386,9 @@ function TableView({ rows, busyId, onEdit, onDelete, onStatus }: { rows: JobAppl
           {rows.map((a) => (
             <tr key={a.id} className="hover:bg-gray-50/60">
               <td className="px-4 py-3">
-                <div className="font-semibold text-gray-900 flex items-center gap-1.5">{a.companyName}{a.jobUrl && <a href={a.jobUrl} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-600" aria-label="Open job posting"><ExternalLink className="w-3.5 h-3.5" /></a>}</div>
+                <div className="font-semibold text-gray-900 flex items-center gap-1.5"><Link href={`/dashboard/applications/${a.id}`} className="hover:text-blue-700">{a.companyName}</Link>{a.jobUrl && <a href={a.jobUrl} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-600" aria-label="Open job posting"><ExternalLink className="w-3.5 h-3.5" /></a>}</div>
                 <div className="text-gray-600">{a.jobTitle}</div>
+                <Link href={`/dashboard/applications/${a.id}`} className="text-xs text-indigo-700 hover:underline">Open workspace →</Link>
                 {a.notes && <div className="text-xs text-gray-400 truncate max-w-xs" title={a.notes}>{a.notes}</div>}
               </td>
               <td className="px-4 py-3"><StatusSelect a={a} busy={busyId === a.id} onStatus={onStatus} /></td>

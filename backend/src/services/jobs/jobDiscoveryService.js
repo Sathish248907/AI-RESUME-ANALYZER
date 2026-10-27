@@ -134,14 +134,10 @@ export function createJobDiscoveryService({ repo, registry, env, logger = { info
    */
   async function refreshFromProviders(query) {
     const result = await registry.search(query);
-    let created = 0;
-    let updated = 0;
-    if (result.jobs.length) {
-      const stored = await repo.upsertJobs(result.jobs);
-      created = stored.created;
-      updated = stored.updated;
-    }
-    // Record each provider's outcome for the setup screen and for diagnosis.
+
+    // Provider rows first: ExternalJob.providerSlug is a foreign key to
+    // JobProvider.slug, so the listings cannot be stored until the provider
+    // exists. This also records each provider's outcome for the setup screen.
     for (const p of result.providers) {
       const adapter = registry.listProviders().find((x) => x.slug === p.slug);
       await repo.recordProviderResult(p.slug, {
@@ -152,6 +148,14 @@ export function createJobDiscoveryService({ repo, registry, env, logger = { info
         error: p.error,
         jobCount: p.count,
       }).catch(() => null);
+    }
+
+    let created = 0;
+    let updated = 0;
+    if (result.jobs.length) {
+      const stored = await repo.upsertJobs(result.jobs);
+      created = stored.created;
+      updated = stored.updated;
     }
     return { ...result, created, updated };
   }

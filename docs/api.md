@@ -319,3 +319,33 @@ reference in [phase12.md](phase12.md).
 
 Application status changes stay in `/api/applications`; tailoring suggestions stay in
 `/api/resume-builder/*`. Phase 12 adds no second workflow for either.
+
+## Application workspace (Phase 13)
+
+All routes require `Authorization: Bearer <jwt>`; every record is owner-scoped and a row belonging to
+another user returns 404. Status changes stay on `PATCH /api/applications/:id`, which now also
+accepts `statusNote`, `confirmUnusual`, `outcome` and `applicationDeadline`, validates the transition
+and writes the activity row. Full reference in [phase13.md](phase13.md).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/application-workspaces` | Dashboard across applications with filter counts (active, drafts, needs follow-up, upcoming interviews, offers, closed) |
+| GET | `/api/applications/:applicationId/workspace?tz=` | Job, stage, checklist, letters, documents, activity, reminders, interviews and the next recommended action in one read |
+| GET / POST | `/api/applications/:applicationId/checklist` | Template seeds once; POST adds a custom step |
+| PATCH / DELETE | `…/checklist/:itemId` | Completing requires `completionSource` (`in_app` \| `external`); template steps are not deletable |
+| GET / POST | `/api/applications/:applicationId/activity` | Audit trail; entries are written only when an operation succeeded |
+| GET / POST | `/api/applications/:applicationId/cover-letters` | POST drafts with AI (grounded, paragraphs that invent facts are withheld) or stores your own text |
+| PATCH / DELETE | `/api/cover-letters/:coverLetterId` | Editing an AI draft marks it `edited`; `status: "approved"` finishes it |
+| POST | `/api/cover-letters/:id/regenerate-paragraph` | Returns a replacement paragraph; saves nothing. 422 when it invents facts |
+| POST | `/api/cover-letters/:id/export` | `application/pdf`, selectable text |
+| GET / POST | `/api/applications/:applicationId/documents` | multipart `document`, or `url` for a link. 503 when storage is not configured |
+| GET | `/api/application-documents/:documentId/download` | Owner-checked stream; storage keys are never returned |
+| DELETE | `/api/application-documents/:documentId` | Deletes the stored file only when nothing else references it |
+| GET / POST | `/api/application-reminders?tz=` | Grouped overdue / today / this week / later in your own timezone |
+| PATCH / DELETE | `/api/application-reminders/:reminderId` | |
+| GET / POST | `/api/applications/:applicationId/interviews` | `createReminder: true` also schedules one |
+| PATCH / DELETE | `/api/application-interviews/:interviewId` | |
+| POST | `/api/applications/:applicationId/readiness-review` | Optional, never blocking, no score |
+
+No endpoint submits an application, contacts an employer, creates a calendar invitation or detects
+an employer response.

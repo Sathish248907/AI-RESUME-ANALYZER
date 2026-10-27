@@ -1,7 +1,16 @@
 import { serializeApplication } from "../models/applicationRepository.js";
 import { pageMeta } from "../validators/common.js";
+import { ApiError } from "../utils/errors.js";
+import { evaluateTransition, statusActivity, allowedNext } from "../services/applications/applicationStatusService.js";
 
-export function createApplicationController({ repo }) {
+/**
+ * @param {{ repo, workspaceRepo?: object }} deps `workspaceRepo` is the Phase 13
+ * repository. When it is present this endpoint also validates status
+ * transitions and writes the activity row for a status change — the tracker
+ * stays the single place a status is changed, rather than Phase 13 adding a
+ * competing one.
+ */
+export function createApplicationController({ repo, workspaceRepo = null }) {
   return {
     async create(req, res, next) {
       try {
@@ -37,8 +46,43 @@ export function createApplicationController({ repo }) {
     },
     async update(req, res, next) {
       try {
-        const row = await repo.update(req.params.id, req.user.id, req.body);
-        res.json({ application: serializeApplication(row) });
+        const { statusNote, confirmUnusual, ...patch } = req.body;
+        const userId = req.user.id;
+
+        // A status change is validated against the workflow before it is written.
+        let transition = null;
+        let before = null;
+        if (patch.status !== undefined) {
+          before = await repo.findByIdForUser(req.params.id, userId);
+          transition = evaluateTransition(before.status, patch.status);
+          if (!transition.ok && transition.sameStatus) {
+            // Not an error worth failing on: drop the no-op and keep any other edits.
+            delete patch.status;
+            transition = null;
+          } else if (!transition.ok && !(transition.unusual && confirmUnusual === true)) {
+            throw new ApiError(409, transition.reason, {
+              code: transition.unusual ? "UNUSUAL_STATUS_TRANSITION" : "INVALID_STATUS_TRANSITION",
+              details: [
+                { message: transition.unusual ? "Send confirmUnusual: true to record it anyway." : "" },
+                { message: `Usual next steps: ${allowedNext(before.status).map((t) => t.label).join(", ") || "none — this application is closed."}` },
+              ].filter((d) => d.message),
+            });
+          }
+        }
+
+        const row = await repo.update(req.params.id, userId, patch);
+
+        if (before && patch.status !== undefined && workspaceRepo) {
+          await workspaceRepo.recordActivity(row.id, userId, {
+            ...statusActivity(before.status, patch.status, { note: statusNote, source: "user" }),
+            dedupeKey: `status:${before.status}->${patch.status}:${Date.now()}`,
+          }).catch(() => null);
+        }
+
+        res.json({
+          application: serializeApplication(row),
+          ...(transition?.unusual ? { note: "Recorded as an unusual transition, as you confirmed." } : {}),
+        });
       } catch (err) {
         next(err);
       }

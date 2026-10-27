@@ -39,6 +39,9 @@ export interface JobApplication {
   jobDescriptionId: string | null;
   resumeId: string | null;
   analysisId: string | null;
+  /** Phase 13, additive: recorded once an offer exists. */
+  outcome?: "accepted" | "declined" | null;
+  applicationDeadline?: string | null;
   jobDescription: { id: string; jobTitle: string; companyName: string | null; targetRole: string } | null;
   resume: { id: string; name: string } | null;
   analysis: { id: string; matchScore: number; analysisMode: "ai" | "demo"; jobTitle: string } | null;
@@ -64,6 +67,13 @@ export interface ApplicationInput {
   jobDescriptionId?: string | null;
   resumeId?: string | null;
   analysisId?: string | null;
+  // ── Phase 13 ──
+  outcome?: "accepted" | "declined" | null;
+  applicationDeadline?: string | null;
+  /** Attached to the activity row this status change writes. */
+  statusNote?: string;
+  /** Required to record a transition the workflow calls unusual. */
+  confirmUnusual?: boolean;
 }
 
 export type ApplicationSort = "newest" | "oldest" | "company" | "followUp" | "updated" | "score";

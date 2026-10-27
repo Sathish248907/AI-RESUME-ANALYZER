@@ -71,6 +71,15 @@ export function createJobRepository(prisma) {
       const stored = [];
       let created = 0;
       let updated = 0;
+
+      // `providerSlug` is a foreign key, so every provider referenced by these
+      // listings must exist first. Callers normally record provider results
+      // before storing jobs; this keeps the insert safe whatever the order.
+      for (const slug of new Set(jobs.map((j) => j.providerSlug).filter(Boolean))) {
+        const existing = await prisma.jobProvider.findFirst({ where: { slug }, select: { slug: true } });
+        if (!existing) await prisma.jobProvider.create({ data: { slug, displayName: slug } }).catch(ignoreDuplicate);
+      }
+
       for (const job of jobs) {
         const { duplicateOf: _duplicateOf, ...data } = job;
         const existing = await prisma.externalJob.findFirst({

@@ -1076,6 +1076,37 @@ test("expired provider listings are purged on the retention boundary, but a save
   assert.ok(await localPrisma.externalJob.findFirst({ where: { id: fresh.id } }));
 });
 
+test("a provider row exists before its listings are stored (ExternalJob.providerSlug is a foreign key)", async () => {
+  // Found by running the app, not by this suite: fakePrisma does not enforce
+  // foreign keys, so the ordering bug only surfaced against PostgreSQL. The
+  // guard below is what these assertions lock in.
+  const localPrisma = fakePrisma();
+  const { createJobRepository } = await import("../src/models/jobRepository.js");
+  const repo = createJobRepository(localPrisma);
+
+  // No jobProvider row exists yet.
+  assert.equal((await localPrisma.jobProvider.findMany({})).length, 0);
+  const job = normalizeJob({ externalId: "fk-1", title: "Dev", companyName: "Acme", description: "x".repeat(60), applyUrl: "https://example.com/fk-1" }, "remotive");
+  await repo.upsertJobs([job]);
+  const providers = await localPrisma.jobProvider.findMany({});
+  assert.equal(providers.length, 1, "storing a listing creates its provider row");
+  assert.equal(providers[0].slug, "remotive");
+
+  // And the discovery service records providers before storing any listing.
+  const env = loadEnv({ ...TEST_ENV, JOB_PROVIDERS: "remotive" });
+  const registry = createJobProviderRegistry({ env, fetchImpl: async () => jsonResponse(remotivePayload()) });
+  const order = [];
+  const tracking = {
+    ...repo,
+    recordProviderResult: async (...args) => { order.push("provider"); return repo.recordProviderResult(...args); },
+    upsertJobs: async (...args) => { order.push("jobs"); return repo.upsertJobs(...args); },
+  };
+  const { createJobDiscoveryService } = await import("../src/services/jobs/jobDiscoveryService.js");
+  const discovery = createJobDiscoveryService({ repo: tracking, registry, env });
+  await discovery.refreshFromProviders({ q: "dev" });
+  assert.deepEqual(order, ["provider", "jobs"], "provider rows are written before the listings that reference them");
+});
+
 test("refetching the same search updates listings in place instead of multiplying them", async () => {
   const localPrisma = fakePrisma();
   const { createJobRepository } = await import("../src/models/jobRepository.js");

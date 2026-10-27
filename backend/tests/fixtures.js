@@ -400,15 +400,46 @@ const RELATIONS = {
     resumeVersion: { model: "resumeVersion", kind: "one", localKey: "resumeVersionId" },
   },
   jobAlert: { user: { model: "user", kind: "one", localKey: "userId" } },
+  // ── Phase 13 ──
+  applicationChecklistItem: { user: { model: "user", kind: "one", localKey: "userId" }, application: { model: "jobApplication", kind: "one", localKey: "applicationId" } },
+  coverLetter: {
+    user: { model: "user", kind: "one", localKey: "userId" },
+    application: { model: "jobApplication", kind: "one", localKey: "applicationId" },
+    resumeVersion: { model: "resumeVersion", kind: "one", localKey: "resumeVersionId" },
+    documents: { model: "applicationDocument", kind: "many", foreignKey: "coverLetterId" },
+  },
+  applicationDocument: {
+    user: { model: "user", kind: "one", localKey: "userId" },
+    application: { model: "jobApplication", kind: "one", localKey: "applicationId" },
+    coverLetter: { model: "coverLetter", kind: "one", localKey: "coverLetterId" },
+  },
+  applicationActivity: { user: { model: "user", kind: "one", localKey: "userId" }, application: { model: "jobApplication", kind: "one", localKey: "applicationId" } },
+  applicationReminder: {
+    user: { model: "user", kind: "one", localKey: "userId" },
+    application: { model: "jobApplication", kind: "one", localKey: "applicationId" },
+    interview: { model: "applicationInterview", kind: "one", localKey: "interviewId" },
+  },
+  applicationInterview: {
+    user: { model: "user", kind: "one", localKey: "userId" },
+    application: { model: "jobApplication", kind: "one", localKey: "applicationId" },
+    mockSession: { model: "interviewSession", kind: "one", localKey: "mockSessionId" },
+    reminders: { model: "applicationReminder", kind: "many", foreignKey: "interviewId" },
+  },
 };
 
 /** onDelete behaviour: which foreign keys to null out / which rows to cascade-delete. */
 const ON_DELETE = {
-  user: { cascade: [["analysis", "userId"], ["resume", "userId"], ["jobDescription", "userId"], ["jobApplication", "userId"], ["interviewSession", "userId"], ["learningRoadmap", "userId"], ["skillGap", "userId"], ["recommendationDismissal", "userId"], ["resumeVersion", "userId"], ["resumeTemplatePreference", "userId"], ["resumeAtsAssessment", "userId"], ["resumeRoleRecommendation", "userId"], ["careerProfile", "userId"], ["careerAssessment", "userId"], ["careerRecommendation", "userId"], ["careerActionPlan", "userId"], ["careerActionTask", "userId"], ["careerCoachConversation", "userId"], ["careerProgressSnapshot", "userId"], ["gamificationProfile", "userId"], ["pointTransaction", "userId"], ["userAchievement", "userId"], ["userGoal", "userId"], ["activityEvent", "userId"], ["progressReport", "userId"], ["userNotification", "userId"], ["savedJob", "userId"], ["jobSearchPreference", "userId"], ["jobMatchReport", "userId"], ["jobAlert", "userId"]] },
+  user: { cascade: [["analysis", "userId"], ["resume", "userId"], ["jobDescription", "userId"], ["jobApplication", "userId"], ["interviewSession", "userId"], ["learningRoadmap", "userId"], ["skillGap", "userId"], ["recommendationDismissal", "userId"], ["resumeVersion", "userId"], ["resumeTemplatePreference", "userId"], ["resumeAtsAssessment", "userId"], ["resumeRoleRecommendation", "userId"], ["careerProfile", "userId"], ["careerAssessment", "userId"], ["careerRecommendation", "userId"], ["careerActionPlan", "userId"], ["careerActionTask", "userId"], ["careerCoachConversation", "userId"], ["careerProgressSnapshot", "userId"], ["gamificationProfile", "userId"], ["pointTransaction", "userId"], ["userAchievement", "userId"], ["userGoal", "userId"], ["activityEvent", "userId"], ["progressReport", "userId"], ["userNotification", "userId"], ["savedJob", "userId"], ["jobSearchPreference", "userId"], ["jobMatchReport", "userId"], ["jobAlert", "userId"], ["applicationChecklistItem", "userId"], ["coverLetter", "userId"], ["applicationDocument", "userId"], ["applicationActivity", "userId"], ["applicationReminder", "userId"], ["applicationInterview", "userId"]] },
   resume: { setNull: [["analysis", "resumeId"], ["jobApplication", "resumeId"], ["resumeVersion", "resumeId"]] },
   jobDescription: { cascade: [["savedJob", "jobDescriptionId"], ["jobMatchReport", "jobDescriptionId"]], setNull: [["analysis", "jobDescriptionId"], ["jobApplication", "jobDescriptionId"], ["resumeVersion", "jobDescriptionId"], ["resumeAtsAssessment", "jobDescriptionId"]] },
   analysis: { setNull: [["jobApplication", "analysisId"]] },
-  jobApplication: { setNull: [["savedJob", "applicationId"]] },
+  jobApplication: { cascade: [["applicationChecklistItem", "applicationId"], ["coverLetter", "applicationId"], ["applicationDocument", "applicationId"], ["applicationActivity", "applicationId"], ["applicationReminder", "applicationId"], ["applicationInterview", "applicationId"]], setNull: [["savedJob", "applicationId"]] },
+  applicationChecklistItem: {},
+  coverLetter: { setNull: [["applicationDocument", "coverLetterId"]] },
+  applicationDocument: {},
+  applicationActivity: {},
+  applicationReminder: {},
+  applicationInterview: { setNull: [["applicationReminder", "interviewId"]] },
   interviewSession: { cascade: [["interviewQuestion", "sessionId"], ["interviewAnswer", "sessionId"]] },
   interviewQuestion: { cascade: [["interviewAnswer", "questionId"]] },
   interviewAnswer: {},
@@ -438,7 +469,7 @@ const DEFAULTS = {
   resume: () => ({ targetRole: null, storageKey: null }),
   jobDescription: () => ({ companyName: null, sourceUrl: null, extractedRequirements: null }),
   analysis: () => ({ analysisMode: "ai", resumeId: null, jobDescriptionId: null, companyName: null, fileName: null, provider: null, model: null, resumeText: null }),
-  jobApplication: () => ({ status: "INTERESTED", applicationDate: new Date(), jobUrl: null, nextFollowUpDate: null, notes: null, jobDescriptionId: null, resumeId: null, analysisId: null }),
+  jobApplication: () => ({ outcome: null, applicationDeadline: null, status: "INTERESTED", applicationDate: new Date(), jobUrl: null, nextFollowUpDate: null, notes: null, jobDescriptionId: null, resumeId: null, analysisId: null }),
   interviewSession: () => ({ interviewType: "mixed", difficulty: "intermediate", durationMinutes: null, completedQuestionCount: 0, score: null, durationSeconds: null, status: "in_progress", scoringRubricVersion: null, analysisId: null, resumeId: null, jobDescriptionId: null, topics: null, source: "mock_interview", startedAt: new Date(), completedAt: null }),
   interviewQuestion: () => ({ suggestedTimeSeconds: 180 }),
   interviewAnswer: () => ({ programmingLanguage: null, status: "draft", evaluationResult: null, score: null, rubricVersion: null, submittedAt: null, evaluatedAt: null }),
@@ -480,6 +511,13 @@ const DEFAULTS = {
   jobSearchPreference: () => ({ titles: [], skills: [], locations: [], workArrangements: [], employmentTypes: [], experienceLevel: null, minSalary: null, salaryCurrency: null, excludedCompanies: [], keywords: null, rankingWeights: null }),
   jobMatchReport: () => ({ externalJobId: null, jobDescriptionId: null }),
   jobAlert: () => ({ frequency: "manual", isActive: true, lastRunAt: null, lastResultCount: 0, lastNewCount: 0 }),
+  // ── Phase 13 ──
+  applicationChecklistItem: () => ({ key: null, description: null, isRequired: true, isCustom: false, completionSource: null, sortOrder: 0, completedAt: null }),
+  coverLetter: () => ({ resumeVersionId: null, jobDescriptionId: null, tone: "professional", lengthTarget: "standard", versionNumber: 1, status: "draft", source: "ai", provider: null, model: null, groundingNotes: null, wordCount: 0 }),
+  applicationDocument: () => ({ kind: "file", fileName: null, mimeType: null, fileSize: null, storageKey: null, url: null, checksum: null, coverLetterId: null, note: null }),
+  applicationActivity: () => ({ detail: null, source: "system", fromStatus: null, toStatus: null, dedupeKey: null, occurredAt: new Date() }),
+  applicationReminder: () => ({ applicationId: null, interviewId: null, note: null, timezone: "UTC", status: "pending", completedAt: null, dedupeKey: null }),
+  applicationInterview: () => ({ scheduledAt: null, timezone: null, durationMinutes: null, mode: "video", location: null, interviewers: null, preparationNotes: null, mockSessionId: null, outcome: "scheduled", feedback: null }),
 };
 
 export function fakePrisma() {

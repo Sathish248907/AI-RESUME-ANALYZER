@@ -33,8 +33,19 @@ export const applicationUpdateSchema = z
     jobDescriptionId: nullableId,
     resumeId: nullableId,
     analysisId: nullableId,
+    // Phase 13, additive: the deadline the user recorded, the final outcome once
+    // an offer exists, a note to attach to the status change, and the explicit
+    // confirmation an unusual transition requires.
+    applicationDeadline: nullableDate,
+    outcome: z.preprocess((v) => (v === "" ? null : v), z.enum(["accepted", "declined"]).nullable().optional()),
+    statusNote: z.preprocess((v) => (v === "" ? undefined : v), z.string().trim().max(1000).optional()),
+    confirmUnusual: z.boolean().optional(),
   })
-  .refine((v) => Object.values(v).some((x) => x !== undefined), { message: "Nothing to update." });
+  .refine((v) => Object.values(v).some((x) => x !== undefined), { message: "Nothing to update." })
+  .refine((v) => !v.outcome || v.status === undefined || v.status === "OFFER", {
+    message: "An accepted or declined outcome belongs on an application at Offer.",
+    path: ["outcome"],
+  });
 
 export const applicationListQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),

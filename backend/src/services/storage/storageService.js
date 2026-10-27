@@ -1,5 +1,6 @@
 /**
- * storageService.js — storage abstraction for original resume files.
+ * storageService.js — storage abstraction for original resume files and, since
+ * Phase 13, application documents.
  *
  * Drivers:
  *   none  — originals are discarded after text extraction (default, nothing on disk)
@@ -19,6 +20,10 @@ const EXT_BY_MIME = {
   "application/pdf": "pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
   "application/msword": "doc",
+  // Phase 13 application documents (certificates, transcripts, portfolios).
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "text/plain": "txt",
 };
 
 function createNoneDriver() {
@@ -37,7 +42,7 @@ function createNoneDriver() {
 
 function createLocalDriver(baseDir) {
   const root = path.resolve(baseDir);
-  const KEY_RX = /^[a-f0-9]{32}\.(pdf|docx|doc)$/;
+  const KEY_RX = /^[a-f0-9]{32}\.(pdf|docx|doc|png|jpg|txt)$/;
 
   function resolveKey(key) {
     if (typeof key !== "string" || !KEY_RX.test(key)) throw new ApiError(404, "File not found.", { code: "FILE_NOT_FOUND" });

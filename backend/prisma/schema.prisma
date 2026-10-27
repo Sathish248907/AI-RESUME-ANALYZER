@@ -49,6 +49,12 @@ model User {
   jobSearchPreference   JobSearchPreference?
   jobMatchReports       JobMatchReport[]
   jobAlerts             JobAlert[]
+  checklistItems        ApplicationChecklistItem[]
+  coverLetters          CoverLetter[]
+  applicationDocuments  ApplicationDocument[]
+  applicationActivities ApplicationActivity[]
+  applicationReminders  ApplicationReminder[]
+  applicationInterviews ApplicationInterview[]
 
   @@map("api_users")
 }
@@ -156,26 +162,37 @@ enum ApplicationStatus {
 }
 
 model JobApplication {
-  id               String            @id @default(cuid())
-  userId           String
-  jobDescriptionId String?
-  resumeId         String?
-  analysisId       String?
-  companyName      String
-  jobTitle         String
-  jobUrl           String?
-  applicationDate  DateTime          @default(now())
-  status           ApplicationStatus @default(INTERESTED)
-  nextFollowUpDate DateTime?
-  notes            String?           @db.Text
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id                  String            @id @default(cuid())
+  userId              String
+  jobDescriptionId    String?
+  resumeId            String?
+  analysisId          String?
+  companyName         String
+  jobTitle            String
+  jobUrl              String?
+  applicationDate     DateTime          @default(now())
+  status              ApplicationStatus @default(INTERESTED)
+  nextFollowUpDate    DateTime?
+  /// Phase 13, additive: the final outcome once an offer exists (accepted |
+  /// declined). Kept off ApplicationStatus so the Phase 9/10 funnel and
+  /// ACTIVE_STATUSES keep their existing meaning.
+  outcome             String?
+  applicationDeadline DateTime?
+  notes               String?           @db.Text
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  jobDescription JobDescription? @relation(fields: [jobDescriptionId], references: [id], onDelete: SetNull)
-  resume         Resume?         @relation(fields: [resumeId], references: [id], onDelete: SetNull)
-  analysis       Analysis?       @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+  user           User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobDescription JobDescription?            @relation(fields: [jobDescriptionId], references: [id], onDelete: SetNull)
+  resume         Resume?                    @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  analysis       Analysis?                  @relation(fields: [analysisId], references: [id], onDelete: SetNull)
   savedJobs      SavedJob[]
+  checklistItems ApplicationChecklistItem[]
+  coverLetters   CoverLetter[]
+  documents      ApplicationDocument[]
+  activities     ApplicationActivity[]
+  reminders      ApplicationReminder[]
+  interviews     ApplicationInterview[]
 
   @@index([userId, status])
   @@index([userId, applicationDate])
@@ -212,9 +229,10 @@ model InterviewSession {
   updatedAt              DateTime  @updatedAt
   completedAt            DateTime?
 
-  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  questions InterviewQuestion[]
-  answers   InterviewAnswer[]
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions             InterviewQuestion[]
+  answers               InterviewAnswer[]
+  applicationInterviews ApplicationInterview[]
 
   @@index([userId, createdAt])
   @@index([userId, status])
@@ -463,6 +481,7 @@ model ResumeVersion {
   atsAssessments      ResumeAtsAssessment[]
   roleRecommendations ResumeRoleRecommendation[]
   jobMatchReports     JobMatchReport[]
+  coverLetters        CoverLetter[]
 
   @@index([userId, updatedAt])
   @@index([resumeId, versionNumber])
@@ -1088,4 +1107,203 @@ model JobAlert {
   @@unique([userId, name])
   @@index([userId, isActive])
   @@map("api_job_alerts")
+}
+
+// ─── Phase 13: application workspace, checklist, cover letters, documents ────
+
+/// One preparation step for an application. Template items carry a stable "key"
+/// so the same step is never seeded twice; custom items have a null key.
+/// completionSource records whether the app verified the step itself (in_app)
+/// or the user is asserting they did it elsewhere (external), because opening
+/// an employer's page proves nothing about a submission.
+model ApplicationChecklistItem {
+  id               String    @id @default(cuid())
+  userId           String
+  applicationId    String
+  key              String?
+  title            String
+  description      String?
+  /// research | resume | cover_letter | documents | interview | submission
+  category         String
+  isRequired       Boolean   @default(true)
+  isCustom         Boolean   @default(false)
+  /// in_app | external — null while incomplete
+  completionSource String?
+  sortOrder        Int       @default(0)
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application JobApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, key])
+  @@index([applicationId, sortOrder])
+  @@index([userId])
+  @@map("api_application_checklist_items")
+}
+
+/// A cover letter draft for one application. Versions are kept so a user can
+/// compare takes; status stays "draft" until the user approves it, and
+/// groundingNotes records what the fabrication guard found.
+model CoverLetter {
+  id               String   @id @default(cuid())
+  userId           String
+  applicationId    String
+  resumeVersionId  String?
+  jobDescriptionId String?
+  title            String
+  content          String   @db.Text
+  /// professional | enthusiastic | concise | formal
+  tone             String   @default("professional")
+  /// short | standard | detailed
+  lengthTarget     String   @default("standard")
+  versionNumber    Int      @default(1)
+  /// draft | approved
+  status           String   @default("draft")
+  /// ai | manual | edited
+  source           String   @default("ai")
+  provider         String?
+  model            String?
+  groundingNotes   Json?
+  wordCount        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application   JobApplication        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  resumeVersion ResumeVersion?        @relation(fields: [resumeVersionId], references: [id], onDelete: SetNull)
+  documents     ApplicationDocument[]
+
+  @@unique([applicationId, versionNumber])
+  @@index([userId, updatedAt])
+  @@map("api_cover_letters")
+}
+
+/// A file or link attached to an application. storageKey is an opaque handle
+/// into the storage driver and is never returned to the browser; downloads go
+/// through an owner-checked endpoint. checksum prevents storing the same bytes
+/// twice on one application.
+model ApplicationDocument {
+  id            String   @id @default(cuid())
+  userId        String
+  applicationId String
+  /// resume | cover_letter | portfolio | certificate | transcript | other
+  category      String
+  /// file | link
+  kind          String   @default("file")
+  fileName      String?
+  mimeType      String?
+  fileSize      Int?
+  storageKey    String?
+  url           String?
+  checksum      String?
+  coverLetterId String?
+  note          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application JobApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  coverLetter CoverLetter?   @relation(fields: [coverLetterId], references: [id], onDelete: SetNull)
+
+  @@unique([applicationId, checksum])
+  @@index([applicationId, category])
+  @@index([userId])
+  @@map("api_application_documents")
+}
+
+/// Audit trail for one application. Every row comes from an operation that
+/// actually succeeded; nothing is backfilled for historical records.
+/// dedupeKey makes a repeated real event idempotent.
+model ApplicationActivity {
+  id            String   @id @default(cuid())
+  userId        String
+  applicationId String
+  /// status_changed | resume_selected | cover_letter_created | checklist_completed |
+  /// document_added | submitted | interview_scheduled | interview_completed |
+  /// follow_up | note | reminder_completed | readiness_review
+  type          String
+  title         String
+  detail        String?  @db.Text
+  /// user | system
+  source        String   @default("system")
+  fromStatus    String?
+  toStatus      String?
+  dedupeKey     String?
+  occurredAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application JobApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, dedupeKey])
+  @@index([applicationId, occurredAt])
+  @@index([userId, occurredAt])
+  @@map("api_application_activities")
+}
+
+/// A personal reminder. timezone is the IANA zone the user entered the time in,
+/// so a due moment can be shown in their own calendar day. Delivery is in-app:
+/// there is no scheduler in this deployment.
+model ApplicationReminder {
+  id            String    @id @default(cuid())
+  userId        String
+  applicationId String?
+  interviewId   String?
+  /// deadline | follow_up | interview | assessment | custom
+  type          String
+  title         String
+  note          String?
+  dueAt         DateTime
+  timezone      String    @default("UTC")
+  /// pending | done | dismissed
+  status        String    @default("pending")
+  completedAt   DateTime?
+  dedupeKey     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application JobApplication?       @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  interview   ApplicationInterview? @relation(fields: [interviewId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, status, dueAt])
+  @@index([applicationId])
+  @@map("api_application_reminders")
+}
+
+/// A real interview round for an application. Interviewer names are stored only
+/// when the user volunteers them; nothing here contacts anyone.
+model ApplicationInterview {
+  id               String    @id @default(cuid())
+  userId           String
+  applicationId    String
+  /// screening | technical | system_design | behavioral | onsite | final | other
+  stage            String
+  scheduledAt      DateTime?
+  timezone         String?
+  durationMinutes  Int?
+  /// video | phone | onsite | take_home
+  mode             String    @default("video")
+  location         String?
+  interviewers     Json?
+  preparationNotes String?   @db.Text
+  /// A Phase 6 mock interview session practised for this round.
+  mockSessionId    String?
+  /// scheduled | completed | passed | rejected | cancelled | no_response
+  outcome          String    @default("scheduled")
+  feedback         String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application JobApplication        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  mockSession InterviewSession?     @relation(fields: [mockSessionId], references: [id], onDelete: SetNull)
+  reminders   ApplicationReminder[]
+
+  @@index([userId, scheduledAt])
+  @@index([applicationId])
+  @@map("api_application_interviews")
 }
