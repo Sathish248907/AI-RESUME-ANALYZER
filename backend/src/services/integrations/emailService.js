@@ -71,8 +71,8 @@ export function createEmailService({ env, repo, logger = { info() {}, warn() {} 
           ? "SMTP is configured."
           : "EMAIL_TRANSPORT is smtp but SMTP_HOST or EMAIL_FROM is missing, so nothing can be delivered.",
       neverDoes: [
-        "Reads your inbox — no mailbox permission is requested anywhere in this product.",
-        "Emails an employer, recruiter or interviewer. Only the address on your own account is ever used.",
+        "It never reads your inbox — no mailbox permission is requested anywhere in this product.",
+        "It never emails an employer, recruiter or interviewer. Only the address on your own account is ever used.",
       ],
     };
   }

@@ -203,10 +203,18 @@ export function createGoogleCalendarService({ oauth, repo, fetchImpl, logger = {
       try {
         results.push({ source: { kind: source.kind, id: source.id, summary: source.summary }, ...(await syncOne(userId, source, { calendarId: preferences.calendarId, dryRun })) });
       } catch (err) {
+        // A revoked or expired grant is an account problem, not an item
+        // problem: every item would fail the same way, and the user needs to
+        // be told to reconnect rather than handed a success to inspect.
+        if (err.code === "REAUTH_REQUIRED" || err.code === "NOT_CONNECTED") {
+          await repo.updateIntegration(integration.id, { lastSyncAt: new Date(), lastError: err.message });
+          throw err;
+        }
         failed += 1;
         results.push({ source: { kind: source.kind, id: source.id, summary: source.summary }, action: "failed", error: err.message });
-        // A rate limit or revoked grant will hit every item; stop early.
-        if (err.code === "CALENDAR_RATE_LIMITED" || err.code === "REAUTH_REQUIRED") break;
+        // A rate limit hits every item too, but it is transient: report what
+        // happened so far rather than failing the whole request.
+        if (err.code === "CALENDAR_RATE_LIMITED") break;
       }
     }
 

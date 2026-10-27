@@ -19,6 +19,8 @@ const envSchema = z.object({
   LLM_TIMEOUT_MS: z.coerce.number().int().min(5000).max(600000).default(90000),
   LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
   ANALYSIS_RATE_LIMIT: z.coerce.number().int().min(1).default(10),
+  // Sign-in and registration attempts per 15 minutes per IP.
+  AUTH_RATE_LIMIT: z.coerce.number().int().min(1).default(20),
   STORE_RESUME_TEXT: z
     .string()
     .default("false")

@@ -349,3 +349,37 @@ and writes the activity row. Full reference in [phase13.md](phase13.md).
 
 No endpoint submits an application, contacts an employer, creates a calendar invitation or detects
 an employer response.
+
+## Integrations & workflow automation (Phase 14)
+
+All routes require `Authorization: Bearer <jwt>` and are owner-scoped, **except**
+`GET /api/integrations/callback`, which the provider's redirect reaches without a Bearer token and
+which is authenticated by a single-use, server-stored `state`. No access token, refresh token or
+provider secret appears in any response body. Full reference in [phase14.md](phase14.md).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/integrations` | Every integration with its real readiness, blockers, scopes, limits and setup steps. `connectable` is true only when this server could complete the flow |
+| GET | `/api/integrations/callback` | Provider redirect. Always redirects into the app with `?connected=` or `?error=&message=`; `partialScopes=1` when a permission was declined |
+| GET | `/api/integrations/:provider/status` | Single provider, with merged preferences. Accepts `email` as well as the OAuth providers |
+| POST | `/api/integrations/:provider/connect` | Returns `authorizationUrl`. 409 when the token vault or the provider credentials are not configured |
+| POST | `/api/integrations/:provider/disconnect` | Deletes the sealed credentials; the response says whether the provider also revoked the grant |
+| POST | `/api/integrations/:provider/sync` | `dryRun: true` returns exactly what would change and writes nothing. 409 `REAUTH_REQUIRED` when the grant was revoked |
+| GET | `/api/integrations/:provider/sync-history` | Everything this app has done at the provider |
+| PUT | `/api/integrations/google_calendar/preferences` | Which event types sync (`interviews`, `deadlines`, `reminders`) |
+| PUT | `/api/integrations/email/preferences` | Which categories the user wants; saved whether or not a transport exists |
+| GET | `/api/integrations/google_drive/folders` | Only folders visible under `drive.file` — not the whole Drive |
+| POST | `/api/integrations/google_drive/export` | One document per request. A cover letter must be approved first (409 `NOT_APPROVED`) |
+| GET | `/api/integrations/email/history` | Delivered and recorded-only messages, with the transport that handled each |
+| GET | `/api/automation/rules` | Workflow catalogue, each with the user's rule and any options that cannot work yet, with the reason |
+| POST | `/api/automation/rules` | Create or update by `workflowKey`. Rules are created disabled |
+| PATCH / DELETE | `/api/automation/rules/:ruleId` | |
+| POST | `/api/automation/pause-all` | Disables every rule in one call |
+| GET | `/api/automation/rules/:ruleId/preview` | The plan the engine would execute. Changes nothing |
+| POST | `/api/automation/rules/:ruleId/run` | Without `approved: true`, actions marked `external` are recorded as `skipped_needs_approval` and the run ends `awaiting_approval` |
+| GET | `/api/automation/executions` | What ran, what was planned, what was approved and what each action did |
+| POST | `/api/automation/executions/:executionId/retry` | Repeats only the failed actions; capped at 3 retries |
+
+No endpoint submits an application, messages an employer, invites anyone to an event, or reads a
+mailbox. Calendar events are created with no attendees, and email is sent only to the address on the
+user's own account.

@@ -162,6 +162,17 @@ export function createIntegrationRepository(prisma) {
     },
 
     // ── Email ───────────────────────────────────────────────────────────────
+    /**
+     * Has this exact notification already been created? The unique constraint
+     * on (userId, dedupeKey) is the backstop; checking first lets the engine
+     * report "already notified" instead of relying on a swallowed violation.
+     */
+    async notificationExists(userId, dedupeKey) {
+      if (!dedupeKey) return false;
+      const row = await prisma.userNotification.findFirst({ where: { userId, dedupeKey }, select: { id: true } });
+      return Boolean(row);
+    },
+
     async userEmail(userId) {
       const user = await prisma.user.findFirst({ where: { id: userId }, select: { email: true } });
       return user?.email ?? null;

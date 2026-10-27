@@ -13,14 +13,22 @@ export const globalLimiter = rateLimit({
   message: message("requests"),
 });
 
-/** Auth limiter — slows credential stuffing. */
-export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 20,
-  standardHeaders: "draft-7",
-  legacyHeaders: false,
-  message: message("sign-in attempts"),
-});
+/**
+ * Auth limiter — slows credential stuffing. Configurable because a test run
+ * registers many accounts from one address; production keeps the low default.
+ */
+export function createAuthLimiter(limit = 20) {
+  return rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: message("sign-in attempts"),
+  });
+}
+
+/** Default instance, for callers that do not configure it. */
+export const authLimiter = createAuthLimiter(20);
 
 /** Analysis limiter — AI calls are expensive; limit per IP and configurable. */
 export function createAnalysisLimiter(limit) {

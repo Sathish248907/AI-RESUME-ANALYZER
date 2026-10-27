@@ -177,6 +177,11 @@ export function createAutomationEngine({ repo, progressRepo, workspaceRepo, cale
   const runners = {
     async notify(userId, action) {
       if (!progressRepo) return { status: "skipped", detail: "Notifications are unavailable." };
+      // Checked explicitly so a repeat run reports it, rather than depending on
+      // a unique-constraint violation being swallowed somewhere below.
+      if (await repo.notificationExists(userId, action.dedupeKey)) {
+        return { status: "ok", detail: "Already notified; nothing duplicated." };
+      }
       const created = await progressRepo.createNotification(userId, {
         type: "automation",
         title: action.payload.title,

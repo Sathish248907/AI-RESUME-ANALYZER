@@ -20,6 +20,7 @@ import { createCareerRoutes } from "./routes/careerRoutes.js";
 import { createProgressRoutes } from "./routes/progressRoutes.js";
 import { createJobRoutes } from "./routes/jobRoutes.js";
 import { createApplicationWorkspaceRoutes } from "./routes/applicationWorkspaceRoutes.js";
+import { createIntegrationRoutes } from "./routes/integrationRoutes.js";
 import { createAuthService } from "./services/authService.js";
 import { createAnalysisRepository } from "./models/analysisRepository.js";
 import { createResumeRepository } from "./models/resumeRepository.js";
@@ -33,10 +34,19 @@ import { createCareerRepository } from "./models/careerRepository.js";
 import { createProgressRepository } from "./models/progressRepository.js";
 import { createJobRepository } from "./models/jobRepository.js";
 import { createApplicationWorkspaceRepository } from "./models/applicationWorkspaceRepository.js";
+import { createIntegrationRepository } from "./models/integrationRepository.js";
 import { createLlmProvider, providerConfigFromEnv } from "./services/ai/llmProvider.js";
 import { createJobProviderRegistry } from "./services/jobs/jobProviderRegistry.js";
 import { createJobDiscoveryService } from "./services/jobs/jobDiscoveryService.js";
 import { createJobAlertService } from "./services/jobs/jobAlertService.js";
+import { createTokenVault } from "./services/integrations/tokenVault.js";
+import { createOAuthService } from "./services/integrations/oauthService.js";
+import { createGoogleCalendarService } from "./services/integrations/googleCalendarService.js";
+import { createGoogleDriveService } from "./services/integrations/googleDriveService.js";
+import { createEmailService } from "./services/integrations/emailService.js";
+import { createAutomationEngine } from "./services/automation/automationEngine.js";
+import { renderResumePdf } from "./services/resumeBuilder/resumePdfService.js";
+import { renderCoverLetterPdf } from "./services/applications/coverLetterPdfService.js";
 import { createStorage } from "./services/storage/storageService.js";
 import { logger } from "./utils/logger.js";
 
@@ -50,9 +60,10 @@ export function aiRequestBudgetMs(env) {
 
 /**
  * @param {{ env: ReturnType<import("./config/env.js").loadEnv>, prisma: import("@prisma/client").PrismaClient,
- *           llm?: any, authService?: any, storage?: any, jobFetch?: typeof fetch }} deps
+ *           llm?: any, authService?: any, storage?: any, jobFetch?: typeof fetch,
+ *           integrationFetch?: typeof fetch }} deps
  */
-export function createApp({ env, prisma, llm, authService, storage, jobFetch }) {
+export function createApp({ env, prisma, llm, authService, storage, jobFetch, integrationFetch }) {
   const app = express();
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
@@ -111,7 +122,25 @@ export function createApp({ env, prisma, llm, authService, storage, jobFetch }) 
     progress: createProgressRepository(prisma),
     jobs: createJobRepository(prisma),
     applicationWorkspace: createApplicationWorkspaceRepository(prisma),
+    integrations: createIntegrationRepository(prisma),
   };
+
+  // Phase 14. `integrationFetch` is injectable so OAuth and provider calls are
+  // testable without the network; the vault refuses to store a token at all
+  // when INTEGRATION_ENCRYPTION_KEY is unset.
+  const tokenVault = createTokenVault(env);
+  const oauthService = createOAuthService({ env, repo: repos.integrations, vault: tokenVault, fetchImpl: integrationFetch, logger });
+  const calendarService = createGoogleCalendarService({ oauth: oauthService, repo: repos.integrations, fetchImpl: integrationFetch, logger });
+  const driveService = createGoogleDriveService({ oauth: oauthService, repo: repos.integrations, fetchImpl: integrationFetch, logger });
+  const emailService = createEmailService({ env, repo: repos.integrations, logger });
+  const automationEngine = createAutomationEngine({
+    repo: repos.integrations,
+    progressRepo: repos.progress,
+    workspaceRepo: repos.applicationWorkspace,
+    calendar: calendarService,
+    email: emailService,
+    logger,
+  });
 
   // Phase 12: provider adapters do no I/O of their own; the registry performs
   // every outbound call so timeouts and rate limits are uniform. `fetchImpl` is
@@ -136,7 +165,7 @@ export function createApp({ env, prisma, llm, authService, storage, jobFetch }) 
     });
   });
 
-  app.use("/api/auth", createAuthRoutes(auth));
+  app.use("/api/auth", createAuthRoutes(auth, { limit: env.AUTH_RATE_LIMIT }));
   app.use("/api/resume", createResumeParseRoutes({ resumeRepo: repos.resume, analysisRepo: repos.analysis, storage: files }));
   app.use("/api/resumes", createResumeRoutes({ authService: auth, resumeRepo: repos.resume, analysisRepo: repos.analysis, storage: files }));
   app.use(
@@ -213,6 +242,23 @@ export function createApp({ env, prisma, llm, authService, storage, jobFetch }) 
     progressRepo: repos.progress,
     storage: files,
     getLlm,
+    analysisRateLimit: env.ANALYSIS_RATE_LIMIT,
+  }));
+
+  app.use("/api", createIntegrationRoutes({
+    authService: auth,
+    repo: repos.integrations,
+    env,
+    vault: tokenVault,
+    oauth: oauthService,
+    calendar: calendarService,
+    drive: driveService,
+    email: emailService,
+    engine: automationEngine,
+    jobRegistry,
+    resumeBuilderRepo: repos.resumeBuilder,
+    renderResumePdf,
+    renderCoverLetterPdf,
     analysisRateLimit: env.ANALYSIS_RATE_LIMIT,
   }));
 

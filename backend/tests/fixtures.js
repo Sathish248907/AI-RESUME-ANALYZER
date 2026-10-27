@@ -425,11 +425,40 @@ const RELATIONS = {
     mockSession: { model: "interviewSession", kind: "one", localKey: "mockSessionId" },
     reminders: { model: "applicationReminder", kind: "many", foreignKey: "interviewId" },
   },
+  // ── Phase 14 ──
+  externalIntegration: {
+    user: { model: "user", kind: "one", localKey: "userId" },
+    syncLogs: { model: "integrationSyncLog", kind: "many", foreignKey: "integrationId" },
+    calendarEvents: { model: "externalCalendarEvent", kind: "many", foreignKey: "integrationId" },
+    fileExports: { model: "externalFileExport", kind: "many", foreignKey: "integrationId" },
+  },
+  pendingAuthorization: { user: { model: "user", kind: "one", localKey: "userId" } },
+  integrationSyncLog: {
+    integration: { model: "externalIntegration", kind: "one", localKey: "integrationId" },
+    user: { model: "user", kind: "one", localKey: "userId" },
+  },
+  externalCalendarEvent: {
+    integration: { model: "externalIntegration", kind: "one", localKey: "integrationId" },
+    user: { model: "user", kind: "one", localKey: "userId" },
+  },
+  externalFileExport: {
+    integration: { model: "externalIntegration", kind: "one", localKey: "integrationId" },
+    user: { model: "user", kind: "one", localKey: "userId" },
+  },
+  automationRule: {
+    user: { model: "user", kind: "one", localKey: "userId" },
+    executions: { model: "automationExecution", kind: "many", foreignKey: "ruleId" },
+  },
+  automationExecution: {
+    user: { model: "user", kind: "one", localKey: "userId" },
+    rule: { model: "automationRule", kind: "one", localKey: "ruleId" },
+  },
+  emailDelivery: { user: { model: "user", kind: "one", localKey: "userId" } },
 };
 
 /** onDelete behaviour: which foreign keys to null out / which rows to cascade-delete. */
 const ON_DELETE = {
-  user: { cascade: [["analysis", "userId"], ["resume", "userId"], ["jobDescription", "userId"], ["jobApplication", "userId"], ["interviewSession", "userId"], ["learningRoadmap", "userId"], ["skillGap", "userId"], ["recommendationDismissal", "userId"], ["resumeVersion", "userId"], ["resumeTemplatePreference", "userId"], ["resumeAtsAssessment", "userId"], ["resumeRoleRecommendation", "userId"], ["careerProfile", "userId"], ["careerAssessment", "userId"], ["careerRecommendation", "userId"], ["careerActionPlan", "userId"], ["careerActionTask", "userId"], ["careerCoachConversation", "userId"], ["careerProgressSnapshot", "userId"], ["gamificationProfile", "userId"], ["pointTransaction", "userId"], ["userAchievement", "userId"], ["userGoal", "userId"], ["activityEvent", "userId"], ["progressReport", "userId"], ["userNotification", "userId"], ["savedJob", "userId"], ["jobSearchPreference", "userId"], ["jobMatchReport", "userId"], ["jobAlert", "userId"], ["applicationChecklistItem", "userId"], ["coverLetter", "userId"], ["applicationDocument", "userId"], ["applicationActivity", "userId"], ["applicationReminder", "userId"], ["applicationInterview", "userId"]] },
+  user: { cascade: [["analysis", "userId"], ["resume", "userId"], ["jobDescription", "userId"], ["jobApplication", "userId"], ["interviewSession", "userId"], ["learningRoadmap", "userId"], ["skillGap", "userId"], ["recommendationDismissal", "userId"], ["resumeVersion", "userId"], ["resumeTemplatePreference", "userId"], ["resumeAtsAssessment", "userId"], ["resumeRoleRecommendation", "userId"], ["careerProfile", "userId"], ["careerAssessment", "userId"], ["careerRecommendation", "userId"], ["careerActionPlan", "userId"], ["careerActionTask", "userId"], ["careerCoachConversation", "userId"], ["careerProgressSnapshot", "userId"], ["gamificationProfile", "userId"], ["pointTransaction", "userId"], ["userAchievement", "userId"], ["userGoal", "userId"], ["activityEvent", "userId"], ["progressReport", "userId"], ["userNotification", "userId"], ["savedJob", "userId"], ["jobSearchPreference", "userId"], ["jobMatchReport", "userId"], ["jobAlert", "userId"], ["applicationChecklistItem", "userId"], ["coverLetter", "userId"], ["applicationDocument", "userId"], ["applicationActivity", "userId"], ["applicationReminder", "userId"], ["applicationInterview", "userId"], ["externalIntegration", "userId"], ["pendingAuthorization", "userId"], ["integrationSyncLog", "userId"], ["externalCalendarEvent", "userId"], ["externalFileExport", "userId"], ["automationRule", "userId"], ["automationExecution", "userId"], ["emailDelivery", "userId"]] },
   resume: { setNull: [["analysis", "resumeId"], ["jobApplication", "resumeId"], ["resumeVersion", "resumeId"]] },
   jobDescription: { cascade: [["savedJob", "jobDescriptionId"], ["jobMatchReport", "jobDescriptionId"]], setNull: [["analysis", "jobDescriptionId"], ["jobApplication", "jobDescriptionId"], ["resumeVersion", "jobDescriptionId"], ["resumeAtsAssessment", "jobDescriptionId"]] },
   analysis: { setNull: [["jobApplication", "analysisId"]] },
@@ -440,6 +469,14 @@ const ON_DELETE = {
   applicationActivity: {},
   applicationReminder: {},
   applicationInterview: { setNull: [["applicationReminder", "interviewId"]] },
+  externalIntegration: { cascade: [["integrationSyncLog", "integrationId"], ["externalCalendarEvent", "integrationId"], ["externalFileExport", "integrationId"]] },
+  pendingAuthorization: {},
+  integrationSyncLog: {},
+  externalCalendarEvent: {},
+  externalFileExport: {},
+  automationRule: { cascade: [["automationExecution", "ruleId"]] },
+  automationExecution: {},
+  emailDelivery: {},
   interviewSession: { cascade: [["interviewQuestion", "sessionId"], ["interviewAnswer", "sessionId"]] },
   interviewQuestion: { cascade: [["interviewAnswer", "questionId"]] },
   interviewAnswer: {},
@@ -517,6 +554,15 @@ const DEFAULTS = {
   applicationDocument: () => ({ kind: "file", fileName: null, mimeType: null, fileSize: null, storageKey: null, url: null, checksum: null, coverLetterId: null, note: null }),
   applicationActivity: () => ({ detail: null, source: "system", fromStatus: null, toStatus: null, dedupeKey: null, occurredAt: new Date() }),
   applicationReminder: () => ({ applicationId: null, interviewId: null, note: null, timezone: "UTC", status: "pending", completedAt: null, dedupeKey: null }),
+  // ── Phase 14 ──
+  externalIntegration: () => ({ status: "disconnected", credentials: null, hasRefreshToken: false, scopes: [], expiresAt: null, connectedAt: null, lastSyncAt: null, lastError: null, externalAccountLabel: null, preferences: {} }),
+  pendingAuthorization: () => ({ codeVerifier: null, returnTo: null }),
+  integrationSyncLog: () => ({ detail: null, externalId: null }),
+  externalCalendarEvent: () => ({ externalEventId: null, calendarId: "primary", contentHash: null, status: "synced", lastSyncedAt: new Date() }),
+  externalFileExport: () => ({ webViewLink: null }),
+  automationRule: () => ({ isEnabled: false, config: {}, lastRunAt: null, lastStatus: null }),
+  automationExecution: () => ({ trigger: null, plannedActions: [], results: [], approved: false, retryOfId: null, retryCount: 0, nextRetryAt: null, errorCategory: null }),
+  emailDelivery: () => ({ preview: null }),
   applicationInterview: () => ({ scheduledAt: null, timezone: null, durationMinutes: null, mode: "video", location: null, interviewers: null, preparationNotes: null, mockSessionId: null, outcome: "scheduled", feedback: null }),
 };
 
@@ -695,10 +741,16 @@ export const TEST_ENV = {
   LLM_PROVIDER: "anthropic",
   LLM_API_KEY: "fake-key",
   ANALYSIS_RATE_LIMIT: "100",
+  AUTH_RATE_LIMIT: "500",
   // Phase 12: no provider is enabled by default, so tests opt in explicitly.
   JOB_PROVIDERS: "",
   JOB_PROVIDER_TIMEOUT_MS: "2000",
   JOB_CACHE_TTL_MINUTES: "30",
   JOB_RETENTION_DAYS: "30",
   JOB_PROVIDER_RATE_LIMIT_PER_MIN: "20",
+  // Phase 14: a real 32-byte key so the vault works in tests; no provider
+  // credentials, so the integrations stay honestly "needs setup" by default.
+  APP_BASE_URL: "http://localhost:4000",
+  INTEGRATION_ENCRYPTION_KEY: "dGVzdC1rZXktMzItYnl0ZXMtZm9yLXZhdWx0LXRlc3Q=",
+  EMAIL_TRANSPORT: "log",
 };
