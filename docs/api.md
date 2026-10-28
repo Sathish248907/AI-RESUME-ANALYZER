@@ -26,19 +26,25 @@ All endpoints return JSON responses with standardized error envelopes.
 ## 1. System Health
 
 ### `GET /api/health`
-Checks server readiness, database connectivity state, and configured LLM provider status.
+Liveness, plus the one capability flag the UI needs before sign-in. Answers even
+while the database is down — use `/api/health/ready` to decide whether to route
+traffic.
+
+`ai.configured` and `ai.provider` are public because the analyzer has to tell a
+signed-out visitor whether AI mode works at all, and the landing page already
+names the provider. The model version, storage driver, integration state,
+`nodeEnv` and uptime are **not** public; they live in `/api/health/details`.
 
 - **Auth Required**: No
 - **Response** (`200 OK`):
   ```json
   {
     "status": "ok",
+    "time": "2026-10-13T10:00:00.000Z",
     "ai": {
       "configured": true,
-      "provider": "anthropic",
-      "model": "claude-opus-5-5"
-    },
-    "time": "2026-10-13T10:00:00.000Z"
+      "provider": "gemini"
+    }
   }
   ```
 
@@ -392,7 +398,7 @@ URL — learns whether to send traffic here and nothing more. Full rationale in
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| GET | `/api/health` | none | `{ status: "ok", time }`. Liveness. Answers even while the database is down, and describes nothing about the deployment |
+| GET | `/api/health` | none | `{ status: "ok", time, ai: { configured, provider } }`. Liveness plus the AI capability flag the signed-out UI needs. Answers even while the database is down. Model, storage, integrations and env stay in `/details` |
 | GET | `/api/health/ready` | none | 200 `ready` / 503 `not_ready` with one word per dependency (`database: "ok" \| "unavailable"`). No driver names, versions or error text. Point the platform health check here |
 | GET | `/api/health/details` | `Bearer $HEALTH_TOKEN` | Uptime, AI provider and model, storage driver, integration readiness. Compared in constant time; **404** when `HEALTH_TOKEN` is unset, so an unconfigured deployment does not advertise the route |
 

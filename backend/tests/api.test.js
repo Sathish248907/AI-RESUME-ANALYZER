@@ -54,13 +54,21 @@ async function registerUser(email) {
   return r.body.token;
 }
 
-test("public health is liveness only and describes nothing about the deployment", async () => {
+test("public health exposes the AI capability flag and nothing beyond it", async () => {
   const r = await api("/api/health");
   assert.equal(r.status, 200);
   assert.equal(r.body.status, "ok");
-  // Reconnaissance value, so none of it is public.
+
+  // The analyzer has to tell a signed-out visitor whether AI mode works at all,
+  // and the landing page already names the provider, so these two are public.
+  // Phase 15 withheld them and silently broke every page reading health.ai.
+  assert.equal(r.body.ai.configured, true);
+  assert.equal(typeof r.body.ai.provider, "string");
+
+  // Everything with genuine reconnaissance value stays in /health/details.
+  assert.equal(r.body.ai.model, undefined);
   const body = JSON.stringify(r.body);
-  for (const leaked of ["ai", "provider", "model", "storage", "fake-key"]) {
+  for (const leaked of ["model", "storage", "integrations", "nodeEnv", "uptime", "fake-key"]) {
     assert.equal(body.includes(leaked), false, `public health leaked "${leaked}"`);
   }
 });

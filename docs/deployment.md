@@ -160,7 +160,7 @@ integrations dashboard prints the value it expects, with a copy button.
 
 | Endpoint | Auth | Returns |
 |---|---|---|
-| `GET /api/health` | public | `{ status: "ok", time }` — liveness only, describes nothing |
+| `GET /api/health` | public | `{ status: "ok", time, ai: { configured, provider } }` — liveness plus the AI capability flag the signed-out UI needs |
 | `GET /api/health/ready` | public | 200 `ready` / 503 `not_ready` with one word per dependency |
 | `GET /api/health/details` | `Bearer $HEALTH_TOKEN` | Uptime, AI provider, storage driver, integration state. 404s when `HEALTH_TOKEN` is unset |
 

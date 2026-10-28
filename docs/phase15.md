@@ -126,10 +126,22 @@ workable. `npm run check:env` runs the gate without starting a server.
 - `requestId` middleware: a UUID per request, echoed as `x-request-id`, carried into every log line
   and into a 500's body as `error.requestId`. An inbound id is honoured only if it matches
   `[A-Za-z0-9._-]{8,128}` — echoing an unvalidated header is response splitting.
-- Health split three ways: `/api/health` (public liveness, says nothing else),
-  `/api/health/ready` (public, 200/503, one word per dependency), `/api/health/details`
-  (`Bearer $HEALTH_TOKEN`, constant-time compared; **404s** when the token is unset, so a
-  deployment that never configured one does not advertise the route).
+- Health split three ways: `/api/health` (public liveness), `/api/health/ready` (public,
+  200/503, one word per dependency), `/api/health/details` (`Bearer $HEALTH_TOKEN`,
+  constant-time compared; **404s** when the token is unset, so a deployment that never
+  configured one does not advertise the route).
+
+  > **Corrected 2026-10-28.** As first shipped, `/api/health` returned `{ status, time }`
+  > and nothing else. That was over-tight: seven pages read `health.ai.configured` to
+  > decide whether AI mode is offered, and the analyzer must answer that for signed-out
+  > visitors. Removing the field threw `TypeError: Cannot read properties of undefined`
+  > and blanked every one of those pages — the regression shipped unnoticed because the
+  > Phase 15 and 16 page sweeps never opened `/dashboard/resume-analyzer`. `/api/health`
+  > now returns `ai: { configured, provider }`. The provider is already named on the
+  > public landing page, so it is not reconnaissance; model, storage driver, integration
+  > and vault state, `nodeEnv` and uptime remain behind `/details`. `getBackendHealth()`
+  > now normalises the response, so a future shape change degrades to "AI not configured"
+  > instead of crashing the page.
 - `unhandledRejection` and `uncaughtException` log the reason, then shut down cleanly.
 
 ### Frontend hardening and accessibility

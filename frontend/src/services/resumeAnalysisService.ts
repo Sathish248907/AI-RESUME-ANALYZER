@@ -96,12 +96,33 @@ export interface BackendHealth {
   ai: { configured: boolean; provider: string; model: string };
 }
 
+/** What the endpoint may actually send; every field is treated as untrusted. */
+type RawHealth = { status?: unknown; ai?: { configured?: unknown; provider?: unknown; model?: unknown } };
+
 // ─── API calls ───────────────────────────────────────────────────────────────
 
+/**
+ * Reads backend health and returns a guaranteed shape, or null if unreachable.
+ *
+ * Seven pages branch on `health.ai.configured`, so the response is normalised
+ * here rather than trusted field by field at each call site. A backend that
+ * stops sending `ai` - as the Phase 15 health split briefly did - must degrade
+ * to "AI not configured" everywhere, not throw a TypeError that blanks the
+ * page. Callers may still assume `health.ai` exists whenever health is non-null.
+ */
 export async function getBackendHealth(): Promise<BackendHealth | null> {
   try {
-    const { data } = await api.get<BackendHealth>("/api/health", { timeout: 4000 });
-    return data;
+    const { data } = await api.get<RawHealth>("/api/health", { timeout: 4000 });
+    if (!data || typeof data !== "object") return null;
+    const ai = (data.ai ?? {}) as NonNullable<RawHealth["ai"]>;
+    return {
+      status: typeof data.status === "string" ? data.status : "unknown",
+      ai: {
+        configured: ai.configured === true,
+        provider: typeof ai.provider === "string" ? ai.provider : "",
+        model: typeof ai.model === "string" ? ai.model : "",
+      },
+    };
   } catch {
     return null;
   }

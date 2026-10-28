@@ -43,9 +43,21 @@ export function createHealthRoutes({ env, prisma, storage }) {
   const router = Router();
   const startedAt = Date.now();
 
-  /** Liveness. Says nothing about configuration. */
+  /**
+   * Liveness, plus the single capability flag the UI needs before sign-in.
+   *
+   * The analyzer has to tell an anonymous visitor whether AI mode is usable at
+   * all, so `configured` and `provider` are public. That is not reconnaissance
+   * in this product: the landing page already names the AI provider. Everything
+   * actually useful to an attacker - model version, storage driver, integration
+   * and vault state, nodeEnv, uptime - stays behind /health/details.
+   */
   router.get("/health", (_req, res) => {
-    res.json({ status: "ok", time: new Date().toISOString() });
+    res.json({
+      status: "ok",
+      time: new Date().toISOString(),
+      ai: { configured: env.LLM_CONFIGURED, provider: env.LLM_PROVIDER },
+    });
   });
 
   /** Readiness. The database is the only hard dependency for serving traffic. */
