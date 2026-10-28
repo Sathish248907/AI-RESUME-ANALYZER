@@ -14,7 +14,23 @@ export function createApplicationController({ repo, workspaceRepo = null }) {
   return {
     async create(req, res, next) {
       try {
-        const row = await repo.create(req.user.id, req.body);
+        // Phase 16: the job-discovery path already refused to create a second
+        // record for the same listing; adding one by hand did not, so the same
+        // job tracked twice produced two pipelines that drifted apart. Same
+        // rule, same escape hatch, same 409 — because sometimes a second
+        // application really is deliberate.
+        const { allowDuplicate, ...data } = req.body;
+        if (!allowDuplicate) {
+          const existing = await repo.findDuplicate(req.user.id, data);
+          if (existing) {
+            throw new ApiError(
+              409,
+              `You already track an application for “${existing.jobTitle}” at ${existing.companyName}. Open it from the tracker, or send allowDuplicate to add a second record deliberately.`,
+              { code: "DUPLICATE_APPLICATION", details: { applicationId: existing.id, status: existing.status } }
+            );
+          }
+        }
+        const row = await repo.create(req.user.id, data);
         res.status(201).json({ application: serializeApplication(row) });
       } catch (err) {
         next(err);

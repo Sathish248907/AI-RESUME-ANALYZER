@@ -36,6 +36,29 @@ export function createApplicationRepository(prisma) {
       return prisma.jobApplication.create({ data: { userId, ...data }, include: INCLUDE });
     },
 
+    /**
+     * An application this user already tracks for the same role at the same
+     * company. Matching is case-insensitive on the pair, because "Acme" and
+     * "acme" are the same employer to the person typing it.
+     *
+     * Closed applications are not matched: re-applying a year later is a real
+     * thing people do, and blocking it would be wrong.
+     */
+    async findDuplicate(userId, { jobTitle, companyName }) {
+      if (!jobTitle || !companyName) return null;
+      const candidates = await prisma.jobApplication.findMany({
+        where: {
+          userId,
+          status: { in: ACTIVE_STATUSES },
+          companyName: { equals: companyName, mode: "insensitive" },
+          jobTitle: { equals: jobTitle, mode: "insensitive" },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      });
+      return candidates[0] ?? null;
+    },
+
     async listForUser(userId, { q, status, targetRole, from, to, sort = "newest", page = 1, limit = 20 } = {}) {
       const where = {
         userId,

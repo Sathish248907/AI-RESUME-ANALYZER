@@ -7,33 +7,17 @@
  */
 import axios, { AxiosError } from "axios";
 
+// Token storage lives in its own module so `fetch`-only callers can import it
+// without pulling axios in. Re-exported here because most of the app already
+// imports these two names from this file.
+export { getToken, setToken, authHeaders, AUTH_CHANGED_EVENT } from "./authToken";
+import { getToken, setToken } from "./authToken";
+
 export const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL ??
   process.env.NEXT_PUBLIC_API_URL ??
   "http://localhost:4000"
 ).replace(/\/$/, "");
-const TOKEN_KEY = "resumeai_auth_token_v1";
-export const AUTH_CHANGED_EVENT = "resumeai:auth-changed";
-
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setToken(token: string | null): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (token) window.localStorage.setItem(TOKEN_KEY, token);
-    else window.localStorage.removeItem(TOKEN_KEY);
-    window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
-  } catch {
-    // ignore storage errors
-  }
-}
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

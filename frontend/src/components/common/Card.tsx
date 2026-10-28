@@ -30,9 +30,19 @@ export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDi
   return <div className={cn("px-6 py-4", className)} {...props} />;
 }
 
-export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+/**
+ * A card's heading. `as` exists because the right heading level depends on
+ * where the card sits: a card that is a top-level section under the page's h1
+ * is an h2, and defaulting everything to h3 made screen-reader users skip a
+ * level on every dashboard. Visual size is set by the class, not the tag.
+ */
+export function CardTitle({
+  className,
+  as: Tag = "h3",
+  ...props
+}: React.HTMLAttributes<HTMLHeadingElement> & { as?: "h2" | "h3" | "h4" }) {
   return (
-    <h3
+    <Tag
       className={cn("text-lg font-semibold text-gray-900", className)}
       {...props}
     />

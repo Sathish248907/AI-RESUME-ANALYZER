@@ -20,7 +20,7 @@ import {
   FileText,
 } from "lucide-react";
 import Button from "@/components/common/Button";
-import { getToken } from "@/services/api";
+import { getToken } from "@/services/authToken";
 
 export default function HistoryPage() {
   const [analyses, setAnalyses] = useState<AnalysisRecord[]>([]);

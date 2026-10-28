@@ -188,15 +188,34 @@ npm run dev:backend
 
 ## Testing & Quality Assurance
 
-Run the automated test suites:
+These are the same checks CI runs on every push and pull request
+(`.github/workflows/ci.yml`); a red run blocks the merge.
 
 ```bash
-# Run backend test suite (unit, integration, and HTTP tests)
-npm test
+# Backend — unit, integration and full HTTP tests.
+# Uses an in-memory database fake and a fake LLM: no credentials, no network.
+npm test                                   # 17 files
 
-# Build and typecheck frontend
+# Backend — would this configuration start in production?
+npm --prefix backend run check:env
+NODE_ENV=production npm --prefix backend run check:env
+
+# Backend — schema and migrations
+npm --prefix backend exec prisma validate
+npm --prefix backend exec prisma migrate status
+
+# Frontend — lint, types, production build
+npm --prefix frontend run lint
+npm run typecheck
 npm run build
+
+# Dependency advisories (both packages)
+npm --prefix backend audit --omit=dev
+npm --prefix frontend audit --omit=dev
 ```
+
+Known-accepted advisories and the reason each is accepted are listed in
+[docs/phase15.md](docs/phase15.md#audit-findings).
 
 ---
 
@@ -204,15 +223,19 @@ npm run build
 
 | Method | Endpoint | Description | Auth Required |
 |---|---|---|---|
-| `GET` | `/api/health` | Server status and AI provider configuration | No |
+| `GET` | `/api/health` | Liveness only — says nothing about the deployment | No |
+| `GET` | `/api/health/ready` | Readiness: 200 `ready` / 503 `not_ready` per dependency | No |
+| `GET` | `/api/health/details` | Uptime, AI provider, storage, integrations | `HEALTH_TOKEN` |
 | `POST` | `/api/auth/register` | Create a new user account | No |
 | `POST` | `/api/auth/login` | Authenticate and obtain JWT | No |
 | `GET` | `/api/auth/me` | Fetch authenticated user profile | Bearer Token |
 | `POST` | `/api/resume/parse` | Parse uploaded PDF/DOCX into clean text | No |
 | `POST` | `/api/analysis/run` | Execute resume vs. job analysis | Optional |
-| `GET` | `/api/analysis/history` | List user analysis records | Bearer Token |
+| `GET` | `/api/analysis` | List user analysis records | Bearer Token |
 | `GET` | `/api/analysis/:id` | Fetch specific analysis result | Bearer Token |
 | `DELETE`| `/api/analysis/:id` | Delete an analysis record | Bearer Token |
+| `GET` | `/api/recommendations` | Cross-feature "what to do next", with reasons | Bearer Token |
+| `GET` | `/api/onboarding` | First-run setup progress | Bearer Token |
 
 Detailed request/response payloads are documented in [`docs/api.md`](docs/api.md).
 
@@ -221,8 +244,33 @@ Detailed request/response payloads are documented in [`docs/api.md`](docs/api.md
 ## GitHub Workflow & Safety
 
 1. **Protected Secrets**: `.env`, `.env.*`, and upload buffers are excluded by `.gitignore`.
+   Never put a real value in a workflow file — use repository secrets.
 2. **Branch Hygiene**: Never use destructive commands (`git push --force`, `git reset --hard`).
-3. **Continuous Verification**: Ensure `npm test` and `npm run build` pass before opening pull requests.
+3. **Continuous Verification**: CI runs lint, types, tests, migrations and the production build.
+4. **Never against a real database**: `prisma migrate dev`, `prisma db push` and
+   `prisma migrate reset` can drop data. Production uses `prisma migrate deploy` only.
+   The frontend package deliberately has no `db:*` migration script — its schema describes
+   the small `legacy` schema and knows nothing of the backend's 55 tables.
+
+---
+
+## Deployment, backup and recovery
+
+- [docs/deployment.md](docs/deployment.md) — architecture, the full environment-variable
+  reference, the Vercel/Render/Neon procedure, health checks and rollback.
+- [docs/operations.md](docs/operations.md) — backups, restore procedure, RPO/RTO targets, the
+  recovery drill, migration safety and an incident checklist.
+- [docs/phase15.md](docs/phase15.md) — the production audit: what was found, what was fixed,
+  what was measured, and what is explicitly **not** verified.
+
+Before any deploy:
+
+```bash
+NODE_ENV=production npm --prefix backend run check:env
+```
+
+The backend refuses to start in production with a placeholder `JWT_SECRET`, a plain-http CORS
+origin, or a leftover `localhost` origin. Fix the variable rather than the guard.
 
 ---
 
@@ -269,3 +317,65 @@ A workspace for every application: an eleven-step preparation checklist that dis
 ## Phase 14 — Career platform integrations & smart workflow automation
 
 Real OAuth connections to your own Google Calendar and Google Drive (authorization code + PKCE, tokens sealed with AES-256-GCM and never sent to the browser), a server-configured email transport, the Phase 12 job providers surfaced in the same picture, and a workflow engine built around two rules: an integration is shown as connectable only when the server could actually complete the flow — otherwise you get the exact missing environment variables and the redirect URI to register, not a button that fails — and nothing that leaves the app happens without an explicit approval. Calendar sync previews before it writes, creates events with no attendees so nobody is invited, and never duplicates on a second run; Drive uses `drive.file`, so this app can touch only the files it created itself; email defaults to recording mode and says plainly that nothing is delivered rather than implying mail is arriving. Four workflows (interview preparation, application follow-up, weekly summary, resume review) are off until you switch them on, each one previewable, each action labelled *in app* or *leaves the app*, with one switch that pauses everything. Nothing submits an application, contacts an employer, or reads your inbox. See [docs/phase14.md](docs/phase14.md). Page at `/dashboard/integrations`; API under `/api/integrations/*` and `/api/automation/*`.
+
+## Phase 15 — Production readiness, security, performance
+
+A full audit of the repository and the fixes that followed. The headline finding was live and
+unauthenticated: the legacy `GET /api/history` route returned up to fifty analyses — full job
+descriptions and resume-derived results — to **any** caller, and `DELETE /api/history?id=` removed
+any row with no ownership check. Both are now authenticated against the backend's own JWT and
+scoped to the caller, verified by re-running the attacks; no database row was touched. `/api/analyze`
+no longer accepts a client-supplied `userId` (a write-side IDOR), caps its input, and is rate
+limited, so an anonymous visitor can no longer run an unbounded bill at the AI provider. NextAuth —
+zero users, unreachable from the UI, two critical advisories, and a second set of Google OAuth
+secrets in the web tier — was removed, taking four of nine frontend advisories with it; the
+frontend's `db:push`/`db:migrate` scripts went too, because its schema knows nothing of the
+backend's 55 tables and pushing it at production would have offered to drop them.
+
+Also: production configuration is now refused at boot when it is unsafe (placeholder secret, http
+origin, leftover localhost) with `npm run check:env` as a pre-deploy gate; health is split into
+public liveness, public readiness and token-gated detail so an anonymous caller learns nothing about
+the deployment; every response carries an `x-request-id` that a 500 repeats back, so failures are
+traceable without ever logging a resume; CI now runs lint, types, tests, `prisma migrate deploy`
+against a real PostgreSQL and the production build on every push. Accessibility went from heading
+skips on all eighteen page/viewport combinations to all eighteen clean, with a visible keyboard
+focus ring confirmed by dispatching real Tab keys.
+
+Backend advisories 5 → 1, frontend 9 → 5; the five that remain are documented with the reason each
+is accepted and what unblocks it. **Nothing has been deployed and no restore has been performed** —
+those procedures are written in [docs/deployment.md](docs/deployment.md) and
+[docs/operations.md](docs/operations.md) and are explicitly marked unverified. See
+[docs/phase15.md](docs/phase15.md) for the full audit, the measured results, and the remaining
+blockers before a public launch.
+
+## Phase 16 — Final integration & end-to-end experience
+
+An audit of what Phases 1–15 actually built, verified by calling every endpoint with a fresh account
+rather than reading code: **42 of 42 existing endpoints work.** The gaps were all compositional.
+
+The dashboard's "recommended next actions" was still the Phase 5 rule set — never persisted, not
+dismissible, and unaware of resume versions, job matches, the application workspace, interviews or
+roadmaps, while a far better engine sat unused under `/api/career/*`. That engine is now the single
+producer behind `/api/recommendations`, with two defects fixed: dismissals made on the learning page
+were in a separate store with different keys and so never silenced the dashboard, and an item closed
+as *done* could never return even when the condition recurred. Duplicate applications were prevented
+on the job-discovery path but not when you added the same job by hand, so one job could become two
+pipelines that drifted apart; both routes now behave identically. `frontend/src/routes/index.ts`
+claimed to centralise every route, had zero importers, and pointed at an endpoint that does not
+exist — deleted, and the README's endpoint table corrected.
+
+Two things were missing entirely and were built: first-run onboarding, and a Settings hub. Onboarding
+stores **progress only** — career stage, target roles and skills already live on `CareerProfile`, so
+each step links to the feature that owns it and that feature does the writing. Step completion is
+derived from real records, which means an account created in Phase 5 with three resumes is already
+set up and is never told to "get started". Settings stores nothing of its own either; it points at
+the four places that already own preferences.
+
+**18/18 backend test files pass** (36 new tests), types and lint are clean, the production build
+succeeds, the single additive migration applied with no reset, and **22/22 end-to-end journey steps
+pass** against the live stack. Two test mistakes are recorded in the docs because they were
+instructive: five of the first six "failures" were the probe's own wrong paths, and one duplicate
+test passed against real PostgreSQL while failing against the in-memory double — the double was
+taught `mode: "insensitive"` rather than the test being weakened. See
+[docs/phase16.md](docs/phase16.md) for the inventory, what was deliberately left alone, and what is
+explicitly not done.

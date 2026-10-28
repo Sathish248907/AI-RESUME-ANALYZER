@@ -52,3 +52,32 @@
     to   { transform: translateY(0);    opacity: 1; }
   }
 }
+
+@layer base {
+  /* Keyboard focus.
+   *
+   * Tailwind's preflight removes the browser's default outline, and most
+   * controls here re-add one with `focus:ring-*`. Plain links and anything
+   * that forgot to do so were left with no visible focus at all, which makes
+   * the page impossible to navigate by keyboard — you cannot see where you
+   * are. `:focus-visible` restores a ring for keyboard users only, so a mouse
+   * click still does not draw one.
+   */
+  :focus-visible {
+    outline: 2px solid theme("colors.blue.600");
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Respect a reduced-motion preference for the decorative animations. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

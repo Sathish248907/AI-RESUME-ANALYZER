@@ -383,3 +383,73 @@ provider secret appears in any response body. Full reference in [phase14.md](pha
 No endpoint submits an application, messages an employer, invites anyone to an event, or reads a
 mailbox. Calendar events are created with no attendees, and email is sent only to the address on the
 user's own account.
+
+## Health and readiness (Phase 15)
+
+Split so that an anonymous caller — which includes a load balancer, and anyone else who finds the
+URL — learns whether to send traffic here and nothing more. Full rationale in
+[phase15.md](phase15.md).
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/api/health` | none | `{ status: "ok", time }`. Liveness. Answers even while the database is down, and describes nothing about the deployment |
+| GET | `/api/health/ready` | none | 200 `ready` / 503 `not_ready` with one word per dependency (`database: "ok" \| "unavailable"`). No driver names, versions or error text. Point the platform health check here |
+| GET | `/api/health/details` | `Bearer $HEALTH_TOKEN` | Uptime, AI provider and model, storage driver, integration readiness. Compared in constant time; **404** when `HEALTH_TOKEN` is unset, so an unconfigured deployment does not advertise the route |
+
+Every response from the API carries an `x-request-id` header, and a 500 repeats it as
+`error.requestId`. An inbound `x-request-id` is honoured only when it matches
+`[A-Za-z0-9._-]{8,128}`; anything else is replaced rather than echoed.
+
+### Legacy Next.js route handlers
+
+These three run inside the Next.js process, not the Express backend, and are documented here because
+they are reachable at `/api/*` on the **frontend** origin.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/api/parse-resume` | none | PDF/DOCX → text. No persistence |
+| POST | `/api/analyze` | optional | Public one-shot analysis. The owner of any saved record is the verified caller — a `userId` in the body is ignored. Input capped at 30 000 / 20 000 characters; rate limited to 5 per 15 min anonymous, 20 signed in. An anonymous run returns `saved: false` |
+| GET / DELETE | `/api/history` | **required** | Per account. `GET` returns only the caller's own analyses; `DELETE` only removes a row the caller owns, and returns 404 rather than disclosing that someone else's row exists |
+
+## Recommendations and onboarding (Phase 16)
+
+All routes require `Authorization: Bearer <jwt>` and are owner-scoped. Full rationale in
+[phase16.md](phase16.md).
+
+### Recommendations
+
+One cross-feature "what to do next" list. The generator is the Phase 9 engine; this surface exists
+so the dashboard has a neutral place to read it, and so a dismissal made on the learning page is
+honoured here too. `/api/career/recommendations` is unchanged and returns the same rows.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/recommendations` | Ranked (priority, then smaller effort) and grouped by type. `?refresh=true` recomputes from the user's records; `?limit=` caps the list. Reading is cheap; refreshing walks the whole career snapshot, so it is rate limited |
+| PATCH | `/api/recommendations/:id` | `{ "status": "open" \| "done" \| "dismissed" }`. Another user's row returns 404 |
+
+Each item carries `reason` (why it is shown), `evidence[]` (the records behind it), `explanation`
+(what to do), `priority`, `effortMinutes` and `href`. **Dismissed stays dismissed** across a
+recompute; **done reopens** only if the underlying condition recurs.
+
+### Onboarding
+
+Tracks progress and nothing else — every answer is written by the feature that owns it, so there is
+one writer per record.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/onboarding` | Current step, each step's state, and the evidence behind it. Reading does not start the flow |
+| POST | `/api/onboarding/steps/:step` | `{ "action": "complete" \| "skip" }`. Steps: `profile`, `resume`, `assessment`, `next_steps`. An unknown step is a 400 |
+| POST | `/api/onboarding/dismiss` | Stop offering the card; every step stays reachable from Settings |
+| POST | `/api/onboarding/restart` | Offer it again |
+
+A step is **satisfied by records, not by clicks**: an account that already has a career profile and
+a resume is past those steps the first time it loads this, and is never told to get started.
+
+### Applications
+
+`POST /api/applications` now refuses a second **open** application for the same job title and
+company (case-insensitive) with `409 DUPLICATE_APPLICATION`, whose `details.applicationId` names the
+record that already exists. Send `allowDuplicate: true` to create one deliberately — the same flag
+the job-discovery path has always used. Closed applications are not matched, so re-applying later
+is allowed.

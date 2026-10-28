@@ -92,7 +92,7 @@ function HubInner() {
       {error && <div role="alert" className="bg-red-50 border border-red-200 text-red-800 rounded-xl px-4 py-3 text-sm">{error} <button className="underline ml-2" onClick={load}>Retry</button></div>}
 
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><FileText className="w-5 h-5 text-blue-600" /> Your uploaded resumes</CardTitle></CardHeader>
+        <CardHeader><CardTitle as="h2" className="flex items-center gap-2"><FileText className="w-5 h-5 text-blue-600" /> Your uploaded resumes</CardTitle></CardHeader>
         <CardContent>
           {resumes.length === 0 ? <EmptyState compact icon={Upload} title="No uploads yet" description="Upload a PDF or DOCX to start from its content, or start from scratch." action={{ label: "Upload", href: "/dashboard/my-resumes" }} /> : (
             <ul className="divide-y divide-gray-100">
@@ -115,7 +115,7 @@ function HubInner() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><Clock className="w-5 h-5 text-gray-500" /> All versions</CardTitle></CardHeader>
+        <CardHeader><CardTitle as="h2" className="flex items-center gap-2"><Clock className="w-5 h-5 text-gray-500" /> All versions</CardTitle></CardHeader>
         <CardContent>
           {versions.length === 0 ? <p className="text-sm text-gray-500">No versions yet. Open an upload or start from scratch.</p> : (
             <ul className="divide-y divide-gray-100">

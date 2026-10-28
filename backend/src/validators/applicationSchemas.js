@@ -19,7 +19,14 @@ const base = {
   analysisId: nullableId,
 };
 
-export const applicationCreateSchema = z.object(base);
+export const applicationCreateSchema = z.object({
+  ...base,
+  /**
+   * Opt out of the duplicate check. Named the same as the job-discovery path's
+   * flag so the two creation routes behave identically.
+   */
+  allowDuplicate: z.preprocess((v) => v === true || v === "true", z.boolean()).default(false),
+});
 
 export const applicationUpdateSchema = z
   .object({

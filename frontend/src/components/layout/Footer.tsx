@@ -21,7 +21,7 @@ export default function Footer() {
           </div>
 
           <div>
-            <h4 className="font-semibold text-white mb-3">Features</h4>
+            <h2 className="font-semibold text-white mb-3">Features</h2>
             <ul className="space-y-2 text-sm">
               <li><Link href="/analyze" className="hover:text-white transition-colors">Resume Analysis</Link></li>
               <li><Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link></li>
@@ -30,7 +30,7 @@ export default function Footer() {
           </div>
 
           <div>
-            <h4 className="font-semibold text-white mb-3">How it works</h4>
+            <h2 className="font-semibold text-white mb-3">How it works</h2>
             <ul className="space-y-2 text-sm">
               <li>Upload your resume (PDF or DOCX)</li>
               <li>Paste the job description</li>

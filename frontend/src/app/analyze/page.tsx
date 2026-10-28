@@ -7,7 +7,7 @@ import Button from "@/components/common/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/common/Card";
 import type { AnalysisResult as AnalysisResultType } from "@/types";
 import { Sparkles, AlertCircle, RotateCcw } from "lucide-react";
-import { getToken } from "@/services/api";
+import { getToken } from "@/services/authToken";
 
 interface ParsedFile {
   file: File;
@@ -142,7 +142,7 @@ export default function AnalyzePage() {
           {/* Resume upload */}
           <Card>
             <CardHeader>
-              <CardTitle>1. Upload Resume</CardTitle>
+              <CardTitle as="h2">1. Upload Resume</CardTitle>
               <p className="text-sm text-gray-500 mt-0.5">PDF or DOCX, max 5MB</p>
             </CardHeader>
             <CardContent>
@@ -173,7 +173,7 @@ export default function AnalyzePage() {
           {/* Job details */}
           <Card>
             <CardHeader>
-              <CardTitle>2. Job Details</CardTitle>
+              <CardTitle as="h2">2. Job Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>

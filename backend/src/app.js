@@ -23,6 +23,8 @@ import { createJobRoutes } from "./routes/jobRoutes.js";
 import { createApplicationWorkspaceRoutes } from "./routes/applicationWorkspaceRoutes.js";
 import { createIntegrationRoutes } from "./routes/integrationRoutes.js";
 import { createHealthRoutes } from "./routes/healthRoutes.js";
+import { createRecommendationRoutes } from "./routes/recommendationRoutes.js";
+import { createOnboardingRoutes } from "./routes/onboardingRoutes.js";
 import { createAuthService } from "./services/authService.js";
 import { createAnalysisRepository } from "./models/analysisRepository.js";
 import { createResumeRepository } from "./models/resumeRepository.js";
@@ -37,6 +39,7 @@ import { createProgressRepository } from "./models/progressRepository.js";
 import { createJobRepository } from "./models/jobRepository.js";
 import { createApplicationWorkspaceRepository } from "./models/applicationWorkspaceRepository.js";
 import { createIntegrationRepository } from "./models/integrationRepository.js";
+import { createOnboardingRepository } from "./models/onboardingRepository.js";
 import { createLlmProvider, providerConfigFromEnv } from "./services/ai/llmProvider.js";
 import { createJobProviderRegistry } from "./services/jobs/jobProviderRegistry.js";
 import { createJobDiscoveryService } from "./services/jobs/jobDiscoveryService.js";
@@ -47,6 +50,8 @@ import { createGoogleCalendarService } from "./services/integrations/googleCalen
 import { createGoogleDriveService } from "./services/integrations/googleDriveService.js";
 import { createEmailService } from "./services/integrations/emailService.js";
 import { createAutomationEngine } from "./services/automation/automationEngine.js";
+import { createRecommendationService } from "./services/recommendations/recommendationService.js";
+import { createOnboardingService } from "./services/onboarding/onboardingService.js";
 import { renderResumePdf } from "./services/resumeBuilder/resumePdfService.js";
 import { renderCoverLetterPdf } from "./services/applications/coverLetterPdfService.js";
 import { createStorage } from "./services/storage/storageService.js";
@@ -127,6 +132,7 @@ export function createApp({ env, prisma, llm, authService, storage, jobFetch, in
     jobs: createJobRepository(prisma),
     applicationWorkspace: createApplicationWorkspaceRepository(prisma),
     integrations: createIntegrationRepository(prisma),
+    onboarding: createOnboardingRepository(prisma),
   };
 
   // Phase 14. `integrationFetch` is injectable so OAuth and provider calls are
@@ -225,6 +231,17 @@ export function createApp({ env, prisma, llm, authService, storage, jobFetch, in
   );
 
   app.use("/api/career", createCareerRoutes({ authService: auth, repo: repos.career, getLlm, analysisRateLimit: env.ANALYSIS_RATE_LIMIT }));
+
+  // Phase 16: one cross-feature recommendation surface. The engine is the
+  // Phase 9 one; this only gives it a home the dashboard can reach, and
+  // reconciles the two dismissal stores so one "no thanks" is honoured in both.
+  const recommendationService = createRecommendationService({ careerRepo: repos.career, learningRepo: repos.learning, logger });
+  app.use("/api", createRecommendationRoutes({ authService: auth, service: recommendationService, analysisRateLimit: env.ANALYSIS_RATE_LIMIT }));
+
+  // Phase 16: first-run setup. It tracks progress only — every answer is saved
+  // by the feature that owns it, so there is one writer per record.
+  const onboardingService = createOnboardingService({ repo: repos.onboarding, careerRepo: repos.career, recommendations: recommendationService, logger });
+  app.use("/api", createOnboardingRoutes({ authService: auth, service: onboardingService }));
 
   const progress = createProgressRoutes({ authService: auth, repo: repos.progress, getLlm, analysisRateLimit: env.ANALYSIS_RATE_LIMIT });
   app.use("/api/analytics", progress.analytics);

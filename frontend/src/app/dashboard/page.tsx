@@ -14,6 +14,17 @@ import { getDashboardActivity, getDashboardOverview, type DashboardActivity, typ
 import { STATUS_LABELS, STATUS_STYLES } from "@/services/jobApplicationService";
 import { getJobAnalysisStats, type JobAnalysisStats } from "@/services/jobAnalysisStorage";
 import { getAnalysisMetas, type StoredAnalysisMeta } from "@/services/analysisStorage";
+import { useToast } from "@/components/common/Toast";
+import OnboardingCard from "@/components/onboarding/OnboardingCard";
+import RecommendationList from "@/components/dashboard/RecommendationList";
+import {
+  dismissOnboarding, getOnboardingState, markOnboardingStep, shouldOfferOnboarding,
+  type OnboardingState, type OnboardingStepKey,
+} from "@/services/onboardingService";
+import {
+  listRecommendations, refreshRecommendations, updateRecommendation,
+  type Recommendation, type RecommendationFeed,
+} from "@/services/recommendationService";
 import { cn, formatDate, getScoreColor } from "@/lib/utils";
 import { BarChart3, FileText, TrendingUp, Target, ArrowRight, PlusCircle, Briefcase, Star, FolderSearch, SearchCode, Layers, LogIn, Bot, FlaskConical, Bell, Lightbulb, Mic, Upload, BookOpen, LineChart, Map, PenSquare, Compass, Trophy } from "lucide-react";
 
@@ -25,15 +36,31 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [jobStats, setJobStats] = useState<JobAnalysisStats | null>(null);
   const [demoAnalyses, setDemoAnalyses] = useState<StoredAnalysisMeta[]>([]);
+  const [onboarding, setOnboarding] = useState<OnboardingState | null>(null);
+  const [feed, setFeed] = useState<RecommendationFeed | null>(null);
+  const [onboardingBusy, setOnboardingBusy] = useState(false);
+  const [recBusyId, setRecBusyId] = useState<string | null>(null);
+  const [refreshingRecs, setRefreshingRecs] = useState(false);
+  const toast = useToast();
 
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     setError(null);
     try {
-      const [o, a] = await Promise.all([getDashboardOverview(), getDashboardActivity(5)]);
+      // Onboarding and recommendations are supporting panels: a failure in
+      // either must not take the whole dashboard down, so they settle
+      // independently of the two reads the page genuinely needs.
+      const [o, a, ob, rf] = await Promise.all([
+        getDashboardOverview(),
+        getDashboardActivity(5),
+        getOnboardingState().catch(() => null),
+        listRecommendations({ limit: 6 }).catch(() => null),
+      ]);
       setOverview(o);
       setActivity(a);
+      setOnboarding(ob);
+      setFeed(rf);
     } catch (err) {
       setError(toApiClientError(err).message);
     } finally {
@@ -53,6 +80,29 @@ export default function DashboardPage() {
 
   const jobsSaved = jobStats?.total ?? 0;
 
+  const runOnboarding = async (fn: () => Promise<OnboardingState>) => {
+    setOnboardingBusy(true);
+    try { setOnboarding(await fn()); }
+    catch (err) { toast.error(toApiClientError(err).message); }
+    finally { setOnboardingBusy(false); }
+  };
+
+  /**
+   * Acting on a recommendation changes what should be recommended, so the list
+   * is recomputed rather than just having the row spliced out locally.
+   */
+  const actOnRecommendation = async (rec: Recommendation, status: "done" | "dismissed") => {
+    setRecBusyId(rec.id);
+    try {
+      await updateRecommendation(rec.id, status);
+      setFeed(await refreshRecommendations({ limit: 6 }));
+    } catch (err) {
+      toast.error(toApiClientError(err).message);
+    } finally {
+      setRecBusyId(null);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -65,6 +115,18 @@ export default function DashboardPage() {
           <Link href="/dashboard/resume-analyzer" className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 text-sm"><PlusCircle className="w-4 h-4" /> New analysis</Link>
         </div>
       </div>
+
+      {/* Setup comes first while anything essential is outstanding. It hides
+          itself once the user's own records answer every step, so an account
+          that predates this flow is never told to "get started". */}
+      {user && onboarding && shouldOfferOnboarding(onboarding) && (
+        <OnboardingCard
+          state={onboarding}
+          busy={onboardingBusy}
+          onSkip={(step: OnboardingStepKey) => runOnboarding(() => markOnboardingStep(step, "skip"))}
+          onDismiss={() => runOnboarding(dismissOnboarding)}
+        />
+      )}
 
       {/* ── Account dashboard ─────────────────────────────────────────────── */}
       {!ready ? (
@@ -105,7 +167,7 @@ export default function DashboardPage() {
             <Card className="lg:col-span-2">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Recent analyses</CardTitle>
+                  <CardTitle as="h2">Recent analyses</CardTitle>
                   <Link href="/dashboard/analysis-history" className="text-sm text-blue-600 hover:underline flex items-center gap-1">View all <ArrowRight className="w-3 h-3" /></Link>
                 </div>
               </CardHeader>
@@ -132,30 +194,43 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            {/* Recommended actions */}
-            <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Lightbulb className="w-4 h-4 text-amber-500" /> Recommended next actions</CardTitle></CardHeader>
-              <CardContent>
-                {overview.recommendedActions.length === 0 ? <p className="text-sm text-gray-400 italic">You&apos;re all caught up.</p> : (
-                  <ul className="space-y-3">
-                    {overview.recommendedActions.map((a) => (
-                      <li key={a.key}>
-                        <Link href={a.href} className="block rounded-lg border border-gray-200 px-3 py-2.5 hover:border-blue-300 hover:bg-blue-50/40">
-                          <p className="text-sm font-medium text-gray-900">{a.title}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{a.detail}</p>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
+            {/* What to do next.
+                Phase 16: this used to be `overview.recommendedActions`, a
+                Phase 5 rule set that knew nothing about resume versions, job
+                matches, the application workspace, interviews or roadmaps, and
+                could not be dismissed. It now reads the one cross-feature
+                engine, which explains and persists every item. The old field is
+                still returned by the API for compatibility; nothing renders it. */}
+            <div>
+              {feed ? (
+                <RecommendationList
+                  feed={feed}
+                  busyId={recBusyId}
+                  refreshing={refreshingRecs}
+                  onComplete={(r) => actOnRecommendation(r, "done")}
+                  onDismiss={(r) => actOnRecommendation(r, "dismissed")}
+                  onRefresh={async () => {
+                    setRefreshingRecs(true);
+                    try { setFeed(await refreshRecommendations({ limit: 6 })); }
+                    catch (err) { toast.error(toApiClientError(err).message); }
+                    finally { setRefreshingRecs(false); }
+                  }}
+                />
+              ) : (
+                <Card>
+                  <CardHeader><CardTitle as="h2" className="flex items-center gap-2 text-base"><Lightbulb className="w-4 h-4 text-amber-500" /> What to do next</CardTitle></CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-gray-400 italic">Suggestions could not be loaded just now.</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
 
             {/* Recent applications */}
             <Card className="lg:col-span-2">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Recent applications</CardTitle>
+                  <CardTitle as="h2">Recent applications</CardTitle>
                   <Link href="/dashboard/applications" className="text-sm text-blue-600 hover:underline flex items-center gap-1">Tracker <ArrowRight className="w-3 h-3" /></Link>
                 </div>
               </CardHeader>
@@ -181,7 +256,7 @@ export default function DashboardPage() {
             {/* Follow-ups + skill gaps */}
             <div className="space-y-6">
               <Card>
-                <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Bell className="w-4 h-4 text-amber-500" /> Upcoming follow-ups</CardTitle></CardHeader>
+                <CardHeader><CardTitle as="h2" className="flex items-center gap-2 text-base"><Bell className="w-4 h-4 text-amber-500" /> Upcoming follow-ups</CardTitle></CardHeader>
                 <CardContent>
                   {activity.upcomingFollowUps.length === 0 ? <p className="text-sm text-gray-400 italic">No follow-ups scheduled.</p> : (
                     <ul className="space-y-2">
@@ -197,7 +272,7 @@ export default function DashboardPage() {
               </Card>
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-base">Frequent skill gaps</CardTitle>
+                  <CardTitle as="h2" className="text-base">Frequent skill gaps</CardTitle>
                   <p className="text-xs text-gray-500 mt-1">Missing or unverified across your AI analyses</p>
                 </CardHeader>
                 <CardContent>
@@ -241,7 +316,7 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Star className="w-4 h-4 text-amber-500" /> Most requested skills</CardTitle></CardHeader>
+            <CardHeader><CardTitle as="h2" className="flex items-center gap-2 text-base"><Star className="w-4 h-4 text-amber-500" /> Most requested skills</CardTitle></CardHeader>
             <CardContent>
               {jobsSaved === 0 || !jobStats || jobStats.topSkills.length === 0 ? <p className="text-sm text-gray-400 italic">Analyze a job description to see counts.</p> : (
                 <ul className="space-y-2">

@@ -367,6 +367,7 @@ const RELATIONS = {
     user: { model: "user", kind: "one", localKey: "userId" },
   },
   careerProfile: { user: { model: "user", kind: "one", localKey: "userId" } },
+  userOnboarding: { user: { model: "user", kind: "one", localKey: "userId" } },
   careerAssessment: { user: { model: "user", kind: "one", localKey: "userId" }, recommendations: { model: "careerRecommendation", kind: "many", foreignKey: "assessmentId" } },
   careerRecommendation: { user: { model: "user", kind: "one", localKey: "userId" }, assessment: { model: "careerAssessment", kind: "one", localKey: "assessmentId" } },
   careerActionPlan: { user: { model: "user", kind: "one", localKey: "userId" }, tasks: { model: "careerActionTask", kind: "many", foreignKey: "planId" } },
@@ -458,7 +459,7 @@ const RELATIONS = {
 
 /** onDelete behaviour: which foreign keys to null out / which rows to cascade-delete. */
 const ON_DELETE = {
-  user: { cascade: [["analysis", "userId"], ["resume", "userId"], ["jobDescription", "userId"], ["jobApplication", "userId"], ["interviewSession", "userId"], ["learningRoadmap", "userId"], ["skillGap", "userId"], ["recommendationDismissal", "userId"], ["resumeVersion", "userId"], ["resumeTemplatePreference", "userId"], ["resumeAtsAssessment", "userId"], ["resumeRoleRecommendation", "userId"], ["careerProfile", "userId"], ["careerAssessment", "userId"], ["careerRecommendation", "userId"], ["careerActionPlan", "userId"], ["careerActionTask", "userId"], ["careerCoachConversation", "userId"], ["careerProgressSnapshot", "userId"], ["gamificationProfile", "userId"], ["pointTransaction", "userId"], ["userAchievement", "userId"], ["userGoal", "userId"], ["activityEvent", "userId"], ["progressReport", "userId"], ["userNotification", "userId"], ["savedJob", "userId"], ["jobSearchPreference", "userId"], ["jobMatchReport", "userId"], ["jobAlert", "userId"], ["applicationChecklistItem", "userId"], ["coverLetter", "userId"], ["applicationDocument", "userId"], ["applicationActivity", "userId"], ["applicationReminder", "userId"], ["applicationInterview", "userId"], ["externalIntegration", "userId"], ["pendingAuthorization", "userId"], ["integrationSyncLog", "userId"], ["externalCalendarEvent", "userId"], ["externalFileExport", "userId"], ["automationRule", "userId"], ["automationExecution", "userId"], ["emailDelivery", "userId"]] },
+  user: { cascade: [["analysis", "userId"], ["resume", "userId"], ["jobDescription", "userId"], ["jobApplication", "userId"], ["interviewSession", "userId"], ["learningRoadmap", "userId"], ["skillGap", "userId"], ["recommendationDismissal", "userId"], ["resumeVersion", "userId"], ["resumeTemplatePreference", "userId"], ["resumeAtsAssessment", "userId"], ["resumeRoleRecommendation", "userId"], ["careerProfile", "userId"], ["careerAssessment", "userId"], ["careerRecommendation", "userId"], ["careerActionPlan", "userId"], ["careerActionTask", "userId"], ["careerCoachConversation", "userId"], ["careerProgressSnapshot", "userId"], ["gamificationProfile", "userId"], ["pointTransaction", "userId"], ["userAchievement", "userId"], ["userGoal", "userId"], ["activityEvent", "userId"], ["progressReport", "userId"], ["userNotification", "userId"], ["savedJob", "userId"], ["jobSearchPreference", "userId"], ["jobMatchReport", "userId"], ["jobAlert", "userId"], ["applicationChecklistItem", "userId"], ["coverLetter", "userId"], ["applicationDocument", "userId"], ["applicationActivity", "userId"], ["applicationReminder", "userId"], ["applicationInterview", "userId"], ["externalIntegration", "userId"], ["pendingAuthorization", "userId"], ["integrationSyncLog", "userId"], ["externalCalendarEvent", "userId"], ["externalFileExport", "userId"], ["automationRule", "userId"], ["automationExecution", "userId"], ["emailDelivery", "userId"], ["userOnboarding", "userId"]] },
   resume: { setNull: [["analysis", "resumeId"], ["jobApplication", "resumeId"], ["resumeVersion", "resumeId"]] },
   jobDescription: { cascade: [["savedJob", "jobDescriptionId"], ["jobMatchReport", "jobDescriptionId"]], setNull: [["analysis", "jobDescriptionId"], ["jobApplication", "jobDescriptionId"], ["resumeVersion", "jobDescriptionId"], ["resumeAtsAssessment", "jobDescriptionId"]] },
   analysis: { setNull: [["jobApplication", "analysisId"]] },
@@ -503,6 +504,7 @@ const ON_DELETE = {
 
 const DEFAULTS = {
   user: () => ({ name: null }),
+  userOnboarding: () => ({ currentStep: "profile", completedSteps: [], skippedSteps: [], completedAt: null, dismissedAt: null, startedAt: new Date() }),
   resume: () => ({ targetRole: null, storageKey: null }),
   jobDescription: () => ({ companyName: null, sourceUrl: null, extractedRequirements: null }),
   analysis: () => ({ analysisMode: "ai", resumeId: null, jobDescriptionId: null, companyName: null, fileName: null, provider: null, model: null, resumeText: null }),
@@ -577,7 +579,17 @@ export function fakePrisma() {
       const a = actual instanceof Date ? actual.getTime() : actual;
       const b = v instanceof Date ? v.getTime() : v;
       switch (op) {
-        case "equals": return a === b;
+        // `mode: "insensitive"` applies to equals and the string operators,
+        // exactly as PostgreSQL does. Without this the double silently matched
+        // case-sensitively while the real database did not, which would make a
+        // passing test mean nothing.
+        case "equals":
+          if (cond.mode === "insensitive" && typeof actual === "string" && typeof v === "string") {
+            return actual.toLowerCase() === v.toLowerCase();
+          }
+          return a === b;
+        case "startsWith": return typeof actual === "string" && (cond.mode === "insensitive" ? actual.toLowerCase().startsWith(String(v).toLowerCase()) : actual.startsWith(v));
+        case "endsWith": return typeof actual === "string" && (cond.mode === "insensitive" ? actual.toLowerCase().endsWith(String(v).toLowerCase()) : actual.endsWith(v));
         case "in": return Array.isArray(v) && v.includes(actual);
         case "notIn": return Array.isArray(v) && !v.includes(actual);
         case "not": return a !== b;

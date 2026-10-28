@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   FileText, LayoutDashboard, History, Menu, X,
-  Sparkles, BookOpen, ChevronDown, Briefcase, FolderSearch, ClipboardList, LineChart, Bot, Mic, Map, Target, PenSquare, Compass, Activity, Search, Plug,
+  Sparkles, BookOpen, ChevronDown, Briefcase, FolderSearch, ClipboardList, LineChart, Bot, Mic, Map, Target, PenSquare, Compass, Activity, Search, Plug, Settings as SettingsIcon,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/services/authService";
@@ -17,26 +17,69 @@ const primaryLinks = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
 ];
 
-const dashboardDropdown = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/resume-analyzer", label: "Resume Analyzer", icon: Sparkles },
-  { href: "/dashboard/my-resumes", label: "My Resumes", icon: FileText },
-  { href: "/dashboard/resume-builder", label: "Resume Builder", icon: PenSquare },
-  { href: "/dashboard/analysis-history", label: "Analysis History", icon: Bot },
-  { href: "/dashboard/interviews", label: "Mock Interviews", icon: Mic },
-  { href: "/dashboard/learning", label: "Learning Roadmap", icon: Map },
-  { href: "/dashboard/learning/skill-gaps", label: "Skill Gap Analysis", icon: Target },
-  { href: "/dashboard/career", label: "Career Coach", icon: Compass },
-  { href: "/dashboard/progress", label: "Progress & Achievements", icon: Activity },
-  { href: "/dashboard/jobs", label: "Job Discovery", icon: Search },
-  { href: "/dashboard/applications", label: "Applications", icon: ClipboardList },
-  { href: "/dashboard/job-descriptions", label: "Job Descriptions", icon: BookOpen },
-  { href: "/dashboard/integrations", label: "Integrations & Automation", icon: Plug },
-  { href: "/dashboard/analytics", label: "Analytics", icon: LineChart },
-  { href: "/dashboard/job-analyzer", label: "Job Analyzer (rules)", icon: Briefcase },
-  { href: "/dashboard/job-history", label: "Local Job Analyses", icon: FolderSearch },
-  { href: "/history", label: "Legacy AI History", icon: History },
+/**
+ * The dashboard menu, grouped.
+ *
+ * Phase 16 audit: this was a flat list of eighteen links in no particular
+ * order, which made it hard to tell that "Resume Analyzer", "ATS Analyzer" and
+ * "Job Analyzer (rules)" are three different things. Grouping them by what a
+ * user is trying to do costs nothing and makes the duplication legible; every
+ * route that existed before is still here, none were renamed.
+ */
+const dashboardGroups: Array<{ label: string; items: Array<{ href: string; label: string; icon: typeof LayoutDashboard; hint?: string }> }> = [
+  {
+    label: "Overview",
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/dashboard/progress", label: "Progress & achievements", icon: Activity },
+      { href: "/dashboard/analytics", label: "Career analytics", icon: LineChart },
+    ],
+  },
+  {
+    label: "Resume",
+    items: [
+      { href: "/dashboard/my-resumes", label: "My resumes", icon: FileText },
+      { href: "/dashboard/resume-builder", label: "Resume builder", icon: PenSquare },
+      { href: "/dashboard/resume-analyzer", label: "ATS & match analysis", icon: Sparkles },
+      { href: "/dashboard/analysis-history", label: "Analysis history", icon: Bot },
+    ],
+  },
+  {
+    label: "Jobs & applications",
+    items: [
+      { href: "/dashboard/jobs", label: "Job discovery", icon: Search },
+      { href: "/dashboard/applications", label: "My applications", icon: ClipboardList },
+      { href: "/dashboard/job-descriptions", label: "Saved job descriptions", icon: BookOpen },
+    ],
+  },
+  {
+    label: "Practice & learning",
+    items: [
+      { href: "/dashboard/interviews", label: "Mock interviews", icon: Mic },
+      { href: "/dashboard/learning", label: "Learning roadmap", icon: Map },
+      { href: "/dashboard/learning/skill-gaps", label: "Skill gap analysis", icon: Target },
+      { href: "/dashboard/career", label: "Career coach", icon: Compass },
+    ],
+  },
+  {
+    label: "Setup",
+    items: [
+      { href: "/dashboard/settings", label: "Settings", icon: SettingsIcon },
+      { href: "/dashboard/integrations", label: "Integrations & automation", icon: Plug },
+    ],
+  },
+  {
+    label: "Rule-based tools",
+    items: [
+      { href: "/dashboard/job-analyzer", label: "Job analyzer", icon: Briefcase, hint: "no AI" },
+      { href: "/dashboard/job-history", label: "Local job analyses", icon: FolderSearch, hint: "this browser" },
+      { href: "/history", label: "Legacy analysis history", icon: History, hint: "Phase 1" },
+    ],
+  },
 ];
+
+/** Flat list, kept for the mobile menu and for active-state checks. */
+const dashboardDropdown = dashboardGroups.flatMap((g) => g.items);
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -106,22 +149,31 @@ export default function Navbar() {
               </button>
 
               {dropdownOpen && (
-                <div className="absolute top-full left-0 mt-1 w-60 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50 max-h-[80vh] overflow-y-auto">
-                  {dashboardDropdown.map(({ href, label, icon: Icon }) => (
-                    <Link
-                      key={href}
-                      href={href}
-                      onClick={() => setDropdownOpen(false)}
-                      className={cn(
-                        "flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors",
-                        pathname === href
-                          ? "bg-blue-50 text-blue-700"
-                          : "text-gray-700 hover:bg-gray-50"
-                      )}
-                    >
-                      <Icon className="w-4 h-4 text-gray-400" />
-                      {label}
-                    </Link>
+                <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-lg py-1 z-50 max-h-[80vh] overflow-y-auto">
+                  {dashboardGroups.map((group, i) => (
+                    <div key={group.label} className={cn(i > 0 && "border-t border-gray-100 mt-1 pt-1")}>
+                      <p className="px-4 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                        {group.label}
+                      </p>
+                      {group.items.map(({ href, label, icon: Icon, hint }) => (
+                        <Link
+                          key={href}
+                          href={href}
+                          onClick={() => setDropdownOpen(false)}
+                          aria-current={pathname === href ? "page" : undefined}
+                          className={cn(
+                            "flex items-center gap-3 px-4 py-2 text-sm font-medium transition-colors",
+                            pathname === href
+                              ? "bg-blue-50 text-blue-700"
+                              : "text-gray-700 hover:bg-gray-50"
+                          )}
+                        >
+                          <Icon className="w-4 h-4 text-gray-400 shrink-0" />
+                          <span className="flex-1 truncate">{label}</span>
+                          {hint && <span className="text-[10px] text-gray-400 shrink-0">{hint}</span>}
+                        </Link>
+                      ))}
+                    </div>
                   ))}
                 </div>
               )}

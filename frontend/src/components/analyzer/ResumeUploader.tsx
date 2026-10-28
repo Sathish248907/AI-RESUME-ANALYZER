@@ -114,7 +114,9 @@ export default function ResumeUploader({
           loading && "opacity-50 cursor-not-allowed"
         )}
       >
-        <input {...getInputProps()} />
+        {/* react-dropzone renders a bare file input; a screen reader
+            announces it as "unlabelled" without this. */}
+        <input {...getInputProps()} aria-label="Choose a resume file to upload" />
 
         <div className="flex flex-col items-center gap-3">
           <div
