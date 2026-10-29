@@ -718,6 +718,32 @@ export function fakePrisma() {
         for (const r of tables[model]) if (matches(model, r, where)) { Object.assign(r, data, { updatedAt: new Date() }); count++; }
         return { count };
       },
+      /**
+       * Update the row the unique `where` names, or create it.
+       *
+       * Scalar unique fields work directly, because `where` is matched the same
+       * way every other query is. A compound unique key arrives as a single
+       * nested object (`{ userId_key: { userId, key } }`), so it is flattened
+       * back into ordinary field matching first.
+       */
+      async upsert({ where, create, update, include, select }) {
+        const flat = {};
+        for (const [k, v] of Object.entries(where)) {
+          if (v && typeof v === "object" && !(v instanceof Date) && !Array.isArray(v) && k.includes("_")) {
+            Object.assign(flat, v);
+          } else {
+            flat[k] = v;
+          }
+        }
+        const row = tables[model].find((r) => matches(model, r, flat));
+        if (row) {
+          Object.assign(row, update, { updatedAt: new Date() });
+          return project(model, row, { include, select });
+        }
+        const fresh = { id: id(), createdAt: new Date(), updatedAt: new Date(), ...DEFAULTS[model](), ...create };
+        tables[model].push(fresh);
+        return project(model, fresh, { include, select });
+      },
       async delete({ where }) {
         const row = tables[model].find((r) => matches(model, r, where));
         if (!row) throw Object.assign(new Error("Record not found"), { code: "P2025" });

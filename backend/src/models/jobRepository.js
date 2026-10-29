@@ -67,38 +67,73 @@ export function createJobRepository(prisma) {
      * and so alerts can notify only on genuinely new listings.
      * @param {object[]} jobs normalized jobs
      */
+    /**
+     * Store a batch of fetched listings.
+     *
+     * The previous version issued a read plus a write for every listing, one
+     * after another; a provider refresh returning a few hundred jobs therefore
+     * made well over a thousand sequential round trips to the database. This
+     * reads what already exists in one query, inserts the new rows in one
+     * statement, and sends the updates as a single batch.
+     */
     async upsertJobs(jobs) {
-      const stored = [];
-      let created = 0;
-      let updated = 0;
+      if (!jobs.length) return { jobs: [], created: 0, updated: 0 };
+      const now = new Date();
 
       // `providerSlug` is a foreign key, so every provider referenced by these
       // listings must exist first. Callers normally record provider results
       // before storing jobs; this keeps the insert safe whatever the order.
-      for (const slug of new Set(jobs.map((j) => j.providerSlug).filter(Boolean))) {
-        const existing = await prisma.jobProvider.findFirst({ where: { slug }, select: { slug: true } });
-        if (!existing) await prisma.jobProvider.create({ data: { slug, displayName: slug } }).catch(ignoreDuplicate);
-      }
-
-      for (const job of jobs) {
-        const { duplicateOf: _duplicateOf, ...data } = job;
-        const existing = await prisma.externalJob.findFirst({
-          where: { providerSlug: data.providerSlug, externalId: data.externalId },
-          select: { id: true },
-        });
-        if (existing) {
-          stored.push(await prisma.externalJob.update({
-            where: { id: existing.id },
-            // fetchedAt is left alone so retention measures first sight, not last touch.
-            data: { ...data, lastCheckedAt: new Date() },
-          }));
-          updated += 1;
-        } else {
-          const row = await prisma.externalJob.create({ data: { ...data, fetchedAt: new Date(), lastCheckedAt: new Date() } }).catch(ignoreDuplicate);
-          if (row) { stored.push(row); created += 1; }
+      const slugs = [...new Set(jobs.map((j) => j.providerSlug).filter(Boolean))];
+      if (slugs.length) {
+        const known = await prisma.jobProvider.findMany({ where: { slug: { in: slugs } }, select: { slug: true } });
+        const have = new Set(known.map((p) => p.slug));
+        const missing = slugs.filter((s) => !have.has(s));
+        if (missing.length) {
+          await prisma.jobProvider.createMany({ data: missing.map((slug) => ({ slug, displayName: slug })), skipDuplicates: true });
         }
       }
-      return { jobs: stored, created, updated };
+
+      // Which of these listings we already hold, in one query. The pair
+      // (providerSlug, externalId) is the natural key, so matching on both
+      // lists and keying on the pair avoids a cross-provider collision.
+      const externalIds = [...new Set(jobs.map((j) => j.externalId).filter(Boolean))];
+      const existing = externalIds.length
+        ? await prisma.externalJob.findMany({
+            where: { providerSlug: { in: slugs }, externalId: { in: externalIds } },
+            select: { id: true, providerSlug: true, externalId: true },
+          })
+        : [];
+      const keyOf = (providerSlug, externalId) => `${providerSlug}@@${externalId}`;
+      const byKey = new Map(existing.map((r) => [keyOf(r.providerSlug, r.externalId), r]));
+
+      const toCreate = [];
+      const updateOps = [];
+      for (const job of jobs) {
+        const { duplicateOf: _duplicateOf, ...data } = job;
+        const prev = byKey.get(keyOf(data.providerSlug, data.externalId));
+        if (prev) {
+          // fetchedAt is left alone so retention measures first sight, not last touch.
+          updateOps.push(prisma.externalJob.update({ where: { id: prev.id }, data: { ...data, lastCheckedAt: now } }));
+        } else {
+          toCreate.push({ ...data, fetchedAt: now, lastCheckedAt: now });
+        }
+      }
+
+      const updatedRows = updateOps.length ? await prisma.$transaction(updateOps) : [];
+
+      let createdRows = [];
+      let created = 0;
+      if (toCreate.length) {
+        // skipDuplicates covers both repeats inside this batch and a
+        // concurrent refresh that inserted the same listing first.
+        const res = await prisma.externalJob.createMany({ data: toCreate, skipDuplicates: true });
+        created = res?.count ?? toCreate.length;
+        createdRows = await prisma.externalJob.findMany({
+          where: { providerSlug: { in: slugs }, externalId: { in: toCreate.map((j) => j.externalId) } },
+        });
+      }
+
+      return { jobs: [...updatedRows, ...createdRows], created, updated: updatedRows.length };
     },
 
     /** Cached listings for a search, with filtering done in SQL where possible. */

@@ -180,9 +180,8 @@ export function createRecommendationService({ careerRepo, learningRepo, logger =
 
     // The existing Phase 9 writer: upserts by key, closes what no longer applies.
     await careerRepo.syncRecommendations(userId, null, toSync);
-    for (const id of reopenIds) {
-      await careerRepo.updateRecommendation(id, userId, { status: "open", completedAt: null });
-    }
+    // One statement, not one round trip per reopened id.
+    await careerRepo.reopenRecommendations(userId, reopenIds);
 
     logger.info?.("recommendations refreshed", {
       meta: { userId, generated: generated.length, written: toSync.length, reopened: reopenIds.length, closed: closedKeys.length, suppressed: suppressed.size },

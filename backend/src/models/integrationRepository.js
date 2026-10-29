@@ -15,6 +15,43 @@ import { notFound } from "../utils/errors.js";
 
 const ignoreDuplicate = (err) => { if (err?.code === "P2002") return null; throw err; };
 
+/**
+ * Calendar shaping, kept pure and separate from fetching.
+ *
+ * `calendarSourceFor` reads one record and `collectCalendarSources` reads them
+ * in bulk; both shape through these, so the two paths cannot drift apart.
+ * Each returns null when the record cannot become a calendar entry.
+ */
+function shapeInterview(round, application) {
+  if (!round?.scheduledAt) return null;
+  return {
+    kind: "interview", id: round.id,
+    summary: `${String(round.stage).replace(/_/g, " ")} interview — ${application?.companyName ?? "application"}`,
+    description: [application?.jobTitle, round.preparationNotes].filter(Boolean).join("\n"),
+    startsAt: round.scheduledAt, durationMinutes: round.durationMinutes ?? 60,
+    timeZone: round.timezone ?? "UTC", location: round.location ?? null,
+  };
+}
+
+function shapeDeadline(application) {
+  if (!application?.applicationDeadline) return null;
+  return {
+    kind: "deadline", id: application.id,
+    summary: `Application deadline — ${application.companyName}`,
+    description: application.jobTitle, startsAt: application.applicationDeadline,
+    durationMinutes: 30, timeZone: "UTC", location: null,
+  };
+}
+
+function shapeReminder(reminder) {
+  if (!reminder) return null;
+  return {
+    kind: "reminder", id: reminder.id, summary: reminder.title,
+    description: reminder.note ?? "", startsAt: reminder.dueAt,
+    durationMinutes: 15, timeZone: reminder.timezone ?? "UTC", location: null,
+  };
+}
+
 export function createIntegrationRepository(prisma) {
   const repo = {
     // ── Integrations ────────────────────────────────────────────────────────
@@ -311,78 +348,76 @@ export function createIntegrationRepository(prisma) {
       ];
       const existing = await prisma.applicationChecklistItem.findMany({ where: { applicationId, userId }, select: { title: true } });
       const have = new Set(existing.map((e) => e.title));
-      let count = await prisma.applicationChecklistItem.count({ where: { applicationId, userId } });
-      let added = 0;
-      for (const title of titles.filter((t) => !have.has(t))) {
-        await prisma.applicationChecklistItem.create({
-          data: { applicationId, userId, key: null, title, description: "Added by the interview preparation workflow.", category: "interview", isRequired: false, isCustom: true, sortOrder: count++ },
-        }).catch(ignoreDuplicate);
-        added += 1;
-      }
-      return added;
+      const missing = titles.filter((t) => !have.has(t));
+      if (!missing.length) return 0;
+      // These rows carry no `key`, so the (applicationId, key) constraint does
+      // not dedupe them - the title check above is what makes this idempotent.
+      const count = await prisma.applicationChecklistItem.count({ where: { applicationId, userId } });
+      await prisma.applicationChecklistItem.createMany({
+        data: missing.map((title, i) => ({
+          applicationId, userId, key: null, title,
+          description: "Added by the interview preparation workflow.",
+          category: "interview", isRequired: false, isCustom: true, sortOrder: count + i,
+        })),
+      });
+      return missing.length;
     },
 
+    /** One record shaped for the calendar service. */
     /** One record shaped for the calendar service. */
     async calendarSourceFor(userId, kind, id) {
       if (kind === "interview") {
         const round = await prisma.applicationInterview.findFirst({ where: { id, userId } });
         if (!round?.scheduledAt) return null;
         const application = await prisma.jobApplication.findFirst({ where: { id: round.applicationId, userId }, select: { jobTitle: true, companyName: true } });
-        return {
-          kind: "interview", id: round.id,
-          summary: `${String(round.stage).replace(/_/g, " ")} interview — ${application?.companyName ?? "application"}`,
-          description: [application?.jobTitle, round.preparationNotes].filter(Boolean).join("\n"),
-          startsAt: round.scheduledAt, durationMinutes: round.durationMinutes ?? 60,
-          timeZone: round.timezone ?? "UTC", location: round.location ?? null,
-        };
+        return shapeInterview(round, application);
       }
       if (kind === "deadline") {
-        const application = await prisma.jobApplication.findFirst({ where: { id, userId } });
-        if (!application?.applicationDeadline) return null;
-        return {
-          kind: "deadline", id: application.id,
-          summary: `Application deadline — ${application.companyName}`,
-          description: application.jobTitle, startsAt: application.applicationDeadline,
-          durationMinutes: 30, timeZone: "UTC", location: null,
-        };
+        return shapeDeadline(await prisma.jobApplication.findFirst({ where: { id, userId } }));
       }
       if (kind === "reminder") {
-        const reminder = await prisma.applicationReminder.findFirst({ where: { id, userId } });
-        if (!reminder) return null;
-        return {
-          kind: "reminder", id: reminder.id, summary: reminder.title,
-          description: reminder.note ?? "", startsAt: reminder.dueAt,
-          durationMinutes: 15, timeZone: reminder.timezone ?? "UTC", location: null,
-        };
+        return shapeReminder(await prisma.applicationReminder.findFirst({ where: { id, userId } }));
       }
       return null;
     },
 
-    /** Everything eligible for calendar sync, honouring the user's choices. */
+    /**
+     * Everything eligible for calendar sync, honouring the user's choices.
+     *
+     * This used to call `calendarSourceFor` once per row. For deadlines and
+     * reminders that re-read a record the loop already held, and for
+     * interviews it fetched the parent application one at a time - well over a
+     * hundred sequential round trips at the fifty-row cap, each one a full
+     * trip to the database's region. The rows are now read in bulk and shaped
+     * in memory by the same functions the single-record path uses, so the
+     * output is unchanged.
+     */
     async collectCalendarSources(userId, preferences) {
-      const sources = [];
-      if (preferences.interviews !== false) {
-        const rounds = await prisma.applicationInterview.findMany({ where: { userId, scheduledAt: { gte: new Date() }, outcome: "scheduled" }, orderBy: { scheduledAt: "asc" }, take: 50 });
-        for (const r of rounds) {
-          const source = await repo.calendarSourceFor(userId, "interview", r.id);
-          if (source) sources.push(source);
-        }
-      }
-      if (preferences.deadlines !== false) {
-        const apps = await prisma.jobApplication.findMany({ where: { userId, applicationDeadline: { gte: new Date() } }, take: 50 });
-        for (const a of apps) {
-          const source = await repo.calendarSourceFor(userId, "deadline", a.id);
-          if (source) sources.push(source);
-        }
-      }
-      if (preferences.reminders === true) {
-        const reminders = await prisma.applicationReminder.findMany({ where: { userId, status: "pending", dueAt: { gte: new Date() } }, take: 50 });
-        for (const r of reminders) {
-          const source = await repo.calendarSourceFor(userId, "reminder", r.id);
-          if (source) sources.push(source);
-        }
-      }
-      return sources;
+      const now = new Date();
+      const [rounds, apps, reminders] = await Promise.all([
+        preferences.interviews !== false
+          ? prisma.applicationInterview.findMany({ where: { userId, scheduledAt: { gte: now }, outcome: "scheduled" }, orderBy: { scheduledAt: "asc" }, take: 50 })
+          : [],
+        preferences.deadlines !== false
+          ? prisma.jobApplication.findMany({ where: { userId, applicationDeadline: { gte: now } }, take: 50 })
+          : [],
+        preferences.reminders === true
+          ? prisma.applicationReminder.findMany({ where: { userId, status: "pending", dueAt: { gte: now } }, take: 50 })
+          : [],
+      ]);
+
+      // Every interview round's parent application, in one query.
+      const parentIds = [...new Set(rounds.map((r) => r.applicationId).filter(Boolean))];
+      const parents = parentIds.length
+        ? await prisma.jobApplication.findMany({ where: { userId, id: { in: parentIds } }, select: { id: true, jobTitle: true, companyName: true } })
+        : [];
+      const parentById = new Map(parents.map((a) => [a.id, a]));
+
+      return [
+        ...rounds.map((r) => shapeInterview(r, parentById.get(r.applicationId) ?? null)),
+        ...apps.map(shapeDeadline),
+        ...reminders.map(shapeReminder),
+      ].filter(Boolean);
     },
 
     /** A resume version or cover letter, for export to cloud storage. */

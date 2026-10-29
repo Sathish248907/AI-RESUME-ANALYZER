@@ -33,9 +33,14 @@ export function createApplicationWorkspaceRepository(prisma) {
         orderBy: { sortOrder: "asc" },
       });
       if (existing.length) return existing;
-      for (const item of seedItems()) {
-        await prisma.applicationChecklistItem.create({ data: { ...item, applicationId, userId } }).catch(ignoreDuplicate);
-      }
+      // One statement rather than one round trip per template row. The
+      // (applicationId, key) unique constraint makes `skipDuplicates` do what
+      // the previous per-row `.catch(ignoreDuplicate)` did, so two requests
+      // racing to seed the same application still end up with one copy.
+      await prisma.applicationChecklistItem.createMany({
+        data: seedItems().map((item) => ({ ...item, applicationId, userId })),
+        skipDuplicates: true,
+      });
       return prisma.applicationChecklistItem.findMany({ where: { applicationId, userId }, orderBy: { sortOrder: "asc" } });
     },
     async listChecklist(applicationId, userId) {

@@ -48,19 +48,52 @@ export function createCareerRepository(prisma) {
     },
 
     // ── Recommendations (upsert by key, keep completion state) ──────────────
+    /**
+     * Writes the current recommendation set in two round trips, not 1+N+M.
+     *
+     * The previous version awaited one update or create per recommendation and
+     * then one more per item being closed. Against a remote database that is a
+     * separate network round trip each time - roughly 200ms apiece on a Neon
+     * endpoint in another region - so a twelve-item refresh spent seconds
+     * almost entirely in transit. Building the operations first and handing
+     * them to `$transaction` sends them as one batch, and makes the write
+     * atomic: a failure midway no longer leaves half the set rewritten.
+     */
     async syncRecommendations(userId, assessmentId, recs) {
       const existing = await prisma.careerRecommendation.findMany({ where: { userId } });
       const byKey = new Map(existing.map((r) => [r.key, r]));
-      const keep = new Set(recs.map((r) => r.key));
-      const out = [];
-      for (const r of recs) {
+      const keep = recs.map((r) => r.key);
+
+      const ops = recs.map((r) => {
         const prev = byKey.get(r.key);
         const data = { assessmentId: assessmentId ?? prev?.assessmentId ?? null, type: r.type, title: r.title, explanation: r.explanation, reason: r.reason, evidence: r.evidence, priority: r.priority, effortMinutes: r.effortMinutes ?? null, href: r.href };
-        out.push(prev ? await prisma.careerRecommendation.update({ where: { id: prev.id }, data }) : await prisma.careerRecommendation.create({ data: { userId, key: r.key, ...data } }));
+        return prev
+          ? prisma.careerRecommendation.update({ where: { id: prev.id }, data })
+          : prisma.careerRecommendation.create({ data: { userId, key: r.key, ...data } });
+      });
+
+      // Open recommendations that no longer apply are closed in one statement
+      // (done/dismissed history is kept). An empty `recs` closes every open
+      // item, which is what "nothing applies any more" should mean.
+      const stale = existing.filter((r) => r.status === "open" && !keep.includes(r.key));
+      if (stale.length > 0) {
+        ops.push(prisma.careerRecommendation.updateMany({
+          where: { userId, id: { in: stale.map((r) => r.id) } },
+          data: { status: "done", completedAt: new Date() },
+        }));
       }
-      // Open recommendations that no longer apply are closed (done/dismissed history is kept).
-      for (const r of existing) if (!keep.has(r.key) && r.status === "open") await prisma.careerRecommendation.update({ where: { id: r.id }, data: { status: "done", completedAt: new Date() } });
-      return out;
+
+      const results = await prisma.$transaction(ops);
+      return results.slice(0, recs.length);
+    },
+    /** Reopen several recommendations at once; one round trip, not one each. */
+    async reopenRecommendations(userId, ids) {
+      if (!ids || ids.length === 0) return 0;
+      const r = await prisma.careerRecommendation.updateMany({
+        where: { userId, id: { in: ids } },
+        data: { status: "open", completedAt: null },
+      });
+      return r.count;
     },
     async listRecommendations(userId, { status } = {}) {
       return prisma.careerRecommendation.findMany({ where: { userId, ...(status ? { status } : {}) }, orderBy: [{ status: "asc" }, { priority: "asc" }, { updatedAt: "desc" }] });

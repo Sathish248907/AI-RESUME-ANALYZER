@@ -51,22 +51,45 @@ export function createProgressRepository(prisma) {
     /** Apply planned transactions + achievement unlocks + activity rows + notifications atomically. */
     async applyLedger(userId, { transactions = [], achievements = [], activity = [], removeActivityKeys = [], notifications = [], profile = {} }) {
       const run = async (tx) => {
-        for (const t of transactions) await tx.pointTransaction.create({ data: { userId, ...t } }).catch(ignoreDuplicate);
-        for (const a of achievements) await tx.userAchievement.create({ data: { userId, ...a } }).catch(ignoreDuplicate);
+        // Each of these models carries a unique constraint over its natural
+        // key, so `skipDuplicates` does precisely what the old per-row
+        // `.catch(ignoreDuplicate)` did - in one statement rather than one
+        // network round trip per row. Inside an interactive transaction that
+        // mattered twice over: every await held the transaction open across
+        // another round trip to the database's region.
+        if (transactions.length) {
+          await tx.pointTransaction.createMany({ data: transactions.map((t) => ({ userId, ...t })), skipDuplicates: true });
+        }
+        if (achievements.length) {
+          await tx.userAchievement.createMany({ data: achievements.map((a) => ({ userId, ...a })), skipDuplicates: true });
+        }
+
         if (activity.length) {
           const existing = await tx.activityEvent.findMany({ where: { userId }, select: { eventKey: true, points: true, id: true } });
           const byKey = new Map(existing.map((e) => [e.eventKey, e]));
+          const toCreate = [];
+          /** Ids grouped by the points value they should end up with. */
+          const repoint = new Map();
           for (const e of activity) {
             const row = byKey.get(e.eventKey);
-            if (!row) await tx.activityEvent.create({ data: { userId, ...e } }).catch(ignoreDuplicate);
-            else if (row.points !== e.points) await tx.activityEvent.update({ where: { id: row.id }, data: { points: e.points } });
+            if (!row) toCreate.push({ userId, ...e });
+            else if (row.points !== e.points) {
+              if (!repoint.has(e.points)) repoint.set(e.points, []);
+              repoint.get(e.points).push(row.id);
+            }
+          }
+          if (toCreate.length) await tx.activityEvent.createMany({ data: toCreate, skipDuplicates: true });
+          // One statement per distinct points value, not per row.
+          for (const [points, ids] of repoint) {
+            await tx.activityEvent.updateMany({ where: { userId, id: { in: ids } }, data: { points } });
           }
         }
+
         if (removeActivityKeys.length) await tx.activityEvent.deleteMany({ where: { userId, eventKey: { in: removeActivityKeys } } });
-        for (const n of notifications) await tx.userNotification.create({ data: { userId, ...n } }).catch(ignoreDuplicate);
-        const p = await tx.gamificationProfile.findFirst({ where: { userId } });
-        if (p) await tx.gamificationProfile.update({ where: { id: p.id }, data: profile });
-        else await tx.gamificationProfile.create({ data: { userId, ...profile } }).catch(ignoreDuplicate);
+        if (notifications.length) {
+          await tx.userNotification.createMany({ data: notifications.map((n) => ({ userId, ...n })), skipDuplicates: true });
+        }
+        await tx.gamificationProfile.upsert({ where: { userId }, create: { userId, ...profile }, update: profile });
       };
       return prisma.$transaction(run, { maxWait: 15_000, timeout: 60_000 });
     },
